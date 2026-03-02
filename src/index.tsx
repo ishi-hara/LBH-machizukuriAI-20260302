@@ -3,7 +3,14 @@ import { Hono } from 'hono'
 // Cloudflare Workers の環境変数型定義
 type Bindings = {
   OPENAI_API_KEY: string
+  FAL_KEY: string
 }
+
+// fal.ai のエンドポイント定数
+const FAL_SUBMIT_URL  = 'https://queue.fal.run/fal-ai/nano-banana-pro/edit'
+const FAL_QUEUE_BASE  = 'https://queue.fal.run/fal-ai/nano-banana-pro/requests'
+// インペインティングに使用するマスク済み画像（白塗りつぶし済み）
+const MASK_IMAGE_URL = 'https://raw.githubusercontent.com/ishi-hara/LBH-image001/main/001-white01.png'
 
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -84,6 +91,154 @@ app.post('/api/refine-prompt', async (c) => {
   } catch (err) {
     console.error('refine-prompt handler error:', err)
     return c.json({ success: false, error: 'Internal server error' }, 500)
+  }
+})
+
+/* ================================================
+   POST /api/generate-submit
+   fal.ai にジョブを投入し requestId を返す
+================================================ */
+app.post('/api/generate-submit', async (c) => {
+  const falKey = c.env.FAL_KEY
+  if (!falKey) {
+    return c.json({ success: false, error: 'FAL_KEY is not configured' }, 500)
+  }
+
+  let prompt: string
+  try {
+    const body = await c.req.json()
+    prompt = body.prompt
+    if (!prompt || typeof prompt !== 'string') {
+      return c.json({ success: false, error: '必要なパラメータが不足しています' }, 400)
+    }
+  } catch {
+    return c.json({ success: false, error: '必要なパラメータが不足しています' }, 400)
+  }
+
+  try {
+    const falRes = await fetch(FAL_SUBMIT_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Key ${falKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        image_urls: [MASK_IMAGE_URL],
+        num_images: 1,
+        aspect_ratio: 'auto',
+        output_format: 'png',
+        resolution: '1K',
+        limit_generations: true,
+      }),
+    })
+
+    if (!falRes.ok) {
+      const errText = await falRes.text()
+      console.error('fal.ai submit error:', falRes.status, errText)
+      return c.json({ success: false, error: 'fal.aiとの通信に失敗しました' }, 502)
+    }
+
+    const falData = await falRes.json() as { request_id?: string }
+    const requestId = falData.request_id
+
+    if (!requestId) {
+      console.error('fal.ai submit: no request_id in response', falData)
+      return c.json({ success: false, error: 'fal.aiとの通信に失敗しました' }, 502)
+    }
+
+    return c.json({ success: true, requestId })
+
+  } catch (err) {
+    console.error('generate-submit handler error:', err)
+    return c.json({ success: false, error: 'fal.aiとの通信に失敗しました' }, 502)
+  }
+})
+
+/* ================================================
+   GET /api/generate-status?id={request_id}
+   fal.ai のジョブステータスを1回確認して返す
+================================================ */
+app.get('/api/generate-status', async (c) => {
+  const falKey = c.env.FAL_KEY
+  if (!falKey) {
+    return c.json({ success: false, error: 'FAL_KEY is not configured' }, 500)
+  }
+
+  const id = c.req.query('id')
+  if (!id) {
+    return c.json({ success: false, error: '必要なパラメータが不足しています' }, 400)
+  }
+
+  try {
+    const statusRes = await fetch(
+      `${FAL_QUEUE_BASE}/${id}/status`,
+      {
+        headers: { 'Authorization': `Key ${falKey}` },
+      }
+    )
+
+    if (!statusRes.ok) {
+      const errText = await statusRes.text()
+      console.error('fal.ai status error:', statusRes.status, errText)
+      return c.json({ success: false, error: 'fal.aiとの通信に失敗しました' }, 502)
+    }
+
+    const statusData = await statusRes.json() as { status?: string }
+    const status = statusData.status ?? 'UNKNOWN'
+
+    return c.json({ status })
+
+  } catch (err) {
+    console.error('generate-status handler error:', err)
+    return c.json({ success: false, error: 'fal.aiとの通信に失敗しました' }, 502)
+  }
+})
+
+/* ================================================
+   GET /api/generate-result?id={request_id}
+   fal.ai の生成結果（画像URL）を取得して返す
+================================================ */
+app.get('/api/generate-result', async (c) => {
+  const falKey = c.env.FAL_KEY
+  if (!falKey) {
+    return c.json({ success: false, error: 'FAL_KEY is not configured' }, 500)
+  }
+
+  const id = c.req.query('id')
+  if (!id) {
+    return c.json({ success: false, error: '必要なパラメータが不足しています' }, 400)
+  }
+
+  try {
+    const resultRes = await fetch(
+      `${FAL_QUEUE_BASE}/${id}`,
+      {
+        headers: { 'Authorization': `Key ${falKey}` },
+      }
+    )
+
+    if (!resultRes.ok) {
+      const errText = await resultRes.text()
+      console.error('fal.ai result error:', resultRes.status, errText)
+      return c.json({ success: false, error: 'fal.aiとの通信に失敗しました' }, 502)
+    }
+
+    const resultData = await resultRes.json() as {
+      images?: { url: string }[]
+    }
+    const imageUrl = resultData.images?.[0]?.url
+
+    if (!imageUrl) {
+      console.error('fal.ai result: no image url in response', resultData)
+      return c.json({ success: false, error: '生成画像の取得に失敗しました' }, 502)
+    }
+
+    return c.json({ success: true, imageUrl })
+
+  } catch (err) {
+    console.error('generate-result handler error:', err)
+    return c.json({ success: false, error: 'fal.aiとの通信に失敗しました' }, 502)
   }
 })
 

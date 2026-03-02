@@ -326,24 +326,81 @@ async function refinePrompt(draftPrompt) {
 
 /* ================================================
    generateImage()
-   プロンプト組み立て → LLM最適化 → （次ステップで画像生成API呼び出し）
+   プロンプト最適化 → fal.ai への投入・ポーリング・結果取得
 ================================================ */
 async function generateImage() {
-  // 1. 日本語下書きプロンプトを組み立て
-  const draftPrompt = buildPrompt(answers);
-  console.log('Draft prompt:', draftPrompt);
+  try {
+    // ---- Phase 1: プロンプト最適化（既存のまま） ----
+    const draftPrompt = buildPrompt(answers);
+    console.log('Draft prompt:', draftPrompt);
+    addMessage('プロンプトを最適化中...🔄', false);
+    const finalPrompt = await refinePrompt(draftPrompt);
+    console.log('Final prompt:', finalPrompt);
 
-  // 2. チャットに「最適化中」メッセージを表示
-  addMessage('プロンプトを最適化中...🔄', false);
+    // ---- Phase 2: 画像生成 ----
+    addMessage('画像を生成中です...🎨\n1〜3分ほどかかる場合があります。', false);
+    showLoading();
+    startTimer();
 
-  // 3. LLMで英語プロンプトに変換
-  const finalPrompt = await refinePrompt(draftPrompt);
-  console.log('Final prompt:', finalPrompt);
+    // Step A: fal.ai にジョブを投入して requestId を取得
+    const submitRes = await fetch('/api/generate-submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: finalPrompt }),
+    });
+    const submitData = await submitRes.json();
+    if (!submitData.success) throw new Error(submitData.error);
 
-  // 4. 最終プロンプトをチャットに表示して確認
-  //    （画像生成API呼び出しは次ステップで実装）
-  addMessage('✅ プロンプト最適化完了！\n\n【生成プロンプト】\n' + finalPrompt, false);
+    const requestId = submitData.requestId;
+    console.log('Request ID:', requestId);
+
+    // Step B: ステータスポーリング（3秒間隔、最大120回 = 360秒）
+    let status = 'IN_QUEUE';
+    let pollCount = 0;
+    const maxPolls = 120;
+
+    while (status !== 'COMPLETED' && status !== 'FAILED' && pollCount < maxPolls) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      const statusRes = await fetch(`/api/generate-status?id=${requestId}`);
+      const statusData = await statusRes.json();
+      status = statusData.status;
+      pollCount++;
+      console.log(`Poll ${pollCount}: ${status}`);
+    }
+
+    if (status === 'FAILED') {
+      throw new Error('画像生成に失敗しました。プロンプトを変えてお試しください。');
+    }
+    if (pollCount >= maxPolls) {
+      throw new Error('画像生成がタイムアウトしました。もう一度お試しください。');
+    }
+
+    // Step C: 生成結果（画像URL）を取得
+    const resultRes = await fetch(`/api/generate-result?id=${requestId}`);
+    const resultData = await resultRes.json();
+    if (!resultData.success) throw new Error(resultData.error);
+
+    // ---- Phase 3: 結果表示（次ステップで完全実装、今はURLをチャットに表示） ----
+    stopTimer();
+    hideLoading();
+    addMessage('✅ 画像生成完了！\n画像URL: ' + resultData.imageUrl, false);
+
+  } catch (error) {
+    stopTimer();
+    hideLoading();
+    console.error('Generation error:', error);
+    addMessage('❌ ' + error.message, false);
+  }
 }
+
+/* ================================================
+   showLoading / hideLoading / startTimer / stopTimer
+   （次ステップで完全実装予定）
+================================================ */
+function showLoading() { console.log('showLoading'); }
+function hideLoading() { console.log('hideLoading'); }
+function startTimer() { console.log('startTimer'); }
+function stopTimer() { console.log('stopTimer'); }
 
 /* ================================================
    downloadImage(url)
