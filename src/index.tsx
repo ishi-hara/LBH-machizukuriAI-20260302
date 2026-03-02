@@ -36,12 +36,12 @@ app.get('/', (c) => {
     <div class="original-image-section__wrapper">
       <img
         src="https://raw.githubusercontent.com/ishi-hara/LBH-image001/main/001-motogazou-station01.jpg"
-        alt="駅周辺の元画像（白いエリアに建造物を生成します）"
+        alt="駅周辺の元画像（花壇のエリアに建造物を生成します）"
         class="original-image-section__img"
         loading="eager"
       />
     </div>
-    <p class="original-image-section__note">※白いエリアに建造物が生成されます</p>
+    <p class="original-image-section__note">※花壇のエリアに建造物が生成されます</p>
   </section>
 
   <!-- ========================================
@@ -54,7 +54,7 @@ app.get('/', (c) => {
       <div class="chat-message chat-message--ai">
         <div class="chat-message__avatar" aria-hidden="true">🤖</div>
         <div class="chat-message__bubble">
-          こんにちは！マスクされた白いエリアにどんな建造物を入れたいですか？（例：お城、神社、遊園地、水族館など）
+          こんにちは！花壇の代わりにどんな建造物を入れたいですか？（例：お城、神社、遊園地、水族館など）
         </div>
       </div>
 
