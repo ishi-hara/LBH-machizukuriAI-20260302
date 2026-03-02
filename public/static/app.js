@@ -252,31 +252,97 @@ function escapeHtml(str) {
 
 /* ================================================
    buildPrompt(answers)
-   ユーザーの回答から画像生成プロンプト草案を組み立てる
-   （次ステップで実装予定）
+   ユーザーの回答から画像生成用の日本語プロンプト草案を組み立てる
+
+   スキップ判定: 以下のキーワードをいずれか「含む」場合はその行を省略（部分一致）
+     「なし」「ない」「なんでも」「特に」「とくに」「任せ」
 ================================================ */
 function buildPrompt(answers) {
-  console.log('[buildPrompt] called', { answers });
-  return '';
-}
+  // ---- スキップ判定ヘルパー ----
+  const SKIP_KEYWORDS = ['なし', 'ない', 'なんでも', '特に', 'とくに', '任せ'];
+  const shouldSkip = (value) => {
+    if (!value) return true;
+    return SKIP_KEYWORDS.some((kw) => value.includes(kw));
+  };
 
-/* ================================================
-   refinePrompt(draftPrompt)
-   LLMでプロンプトを最適化する
-   （次ステップで実装予定）
-================================================ */
-async function refinePrompt(draftPrompt) {
-  console.log('[refinePrompt] called', { draftPrompt });
+  // ---- ベーステンプレート（{buildingType} を置換） ----
+  const base =
+    `マスクした白のエリアを${answers.buildingType}をメインとした場所にする。\n` +
+    `${answers.buildingType}の周りは、${answers.buildingType}にあった雰囲気のものにすること。\n` +
+    `柵でエリア全体の周囲を囲むこと。\n` +
+    `また、アニメ風やイラストではなく、実写写真風・フォトリアル寄りにすること。\n` +
+    `一方で、建物、道路、通路、高架構造物、その他すべての建築要素は元の画像のまま保持する。\n` +
+    `ただし、${answers.buildingType}の画像が途中で切れないようにする。`;
+
+  // ---- 追加情報（スキップ対象外のみ付加） ----
+  const extras = [];
+  if (!shouldSkip(answers.atmosphere)) {
+    extras.push(`雰囲気: ${answers.atmosphere}`);
+  }
+  if (!shouldSkip(answers.surroundings)) {
+    extras.push(`周囲の環境: ${answers.surroundings}`);
+  }
+  if (!shouldSkip(answers.timeOfDay)) {
+    extras.push(`季節・時間帯: ${answers.timeOfDay}`);
+  }
+  if (!shouldSkip(answers.additionalNotes)) {
+    extras.push(`追加要素: ${answers.additionalNotes}`);
+  }
+
+  const draftPrompt = extras.length > 0
+    ? `${base}\n${extras.join('\n')}`
+    : base;
+
+  console.log('[buildPrompt] draft:\n', draftPrompt);
   return draftPrompt;
 }
 
 /* ================================================
+   refinePrompt(draftPrompt)
+   POST /api/refine-prompt を呼び出し、
+   GPT-4.1-mini で英語プロンプトに最適化する。
+   失敗時は draftPrompt をそのまま返す（フォールバック）
+================================================ */
+async function refinePrompt(draftPrompt) {
+  try {
+    const response = await fetch('/api/refine-prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draftPrompt: draftPrompt }),
+    });
+    const data = await response.json();
+    if (data.success) {
+      console.log('[refinePrompt] refined:', data.refinedPrompt);
+      return data.refinedPrompt;
+    } else {
+      console.warn('[refinePrompt] LLM refinement failed, using draft prompt:', data.error);
+      return draftPrompt;
+    }
+  } catch (error) {
+    console.warn('[refinePrompt] fetch error, using draft prompt:', error);
+    return draftPrompt;
+  }
+}
+
+/* ================================================
    generateImage()
-   画像生成APIを呼び出す
-   （次ステップで実装予定）
+   プロンプト組み立て → LLM最適化 → （次ステップで画像生成API呼び出し）
 ================================================ */
 async function generateImage() {
-  console.log('generateImage called');
+  // 1. 日本語下書きプロンプトを組み立て
+  const draftPrompt = buildPrompt(answers);
+  console.log('Draft prompt:', draftPrompt);
+
+  // 2. チャットに「最適化中」メッセージを表示
+  addMessage('プロンプトを最適化中...🔄', false);
+
+  // 3. LLMで英語プロンプトに変換
+  const finalPrompt = await refinePrompt(draftPrompt);
+  console.log('Final prompt:', finalPrompt);
+
+  // 4. 最終プロンプトをチャットに表示して確認
+  //    （画像生成API呼び出しは次ステップで実装）
+  addMessage('✅ プロンプト最適化完了！\n\n【生成プロンプト】\n' + finalPrompt, false);
 }
 
 /* ================================================

@@ -1,6 +1,91 @@
 import { Hono } from 'hono'
 
-const app = new Hono()
+// Cloudflare Workers の環境変数型定義
+type Bindings = {
+  OPENAI_API_KEY: string
+}
+
+const app = new Hono<{ Bindings: Bindings }>()
+
+/* ================================================
+   POST /api/refine-prompt
+   日本語プロンプト草案を GPT-4.1-mini で英語プロンプトに最適化する
+================================================ */
+app.post('/api/refine-prompt', async (c) => {
+  const apiKey = c.env.OPENAI_API_KEY
+  if (!apiKey) {
+    return c.json({ success: false, error: 'OPENAI_API_KEY is not configured' }, 500)
+  }
+
+  let draftPrompt: string
+  try {
+    const body = await c.req.json()
+    draftPrompt = body.draftPrompt
+    if (!draftPrompt || typeof draftPrompt !== 'string') {
+      return c.json({ success: false, error: 'draftPrompt is required' }, 400)
+    }
+  } catch {
+    return c.json({ success: false, error: 'Invalid JSON body' }, 400)
+  }
+
+  const systemPrompt =
+    'あなたは画像生成AI向けのプロンプトエンジニアです。以下のルールに厳密に従って、入力された日本語の画像編集指示を、画像生成AIに最適化された英語プロンプトに変換してください。\n\n' +
+    '背景情報:\n' +
+    '- 元画像は駅前のロータリーの写真です\n' +
+    '- マスク画像で花壇のエリアが白く塗りつぶされています\n' +
+    '- 元画像とマスク画像の2枚をAPIに渡して、白い部分だけを変更します\n\n' +
+    'ルール:\n' +
+    '1. フォトリアリスティック（実写写真風）であることを必ず明記する\n' +
+    '2. アニメ風・イラスト風を明確に禁止する表現を入れる\n' +
+    '3. 元画像の既存の建築要素（建物、道路、通路、高架構造物）を保持する指示を含める\n' +
+    '4. マスクされた白いエリアのみを変更する指示にする\n' +
+    '5. 指定された建造物が画像の端で途中で切れないよう指示する\n' +
+    '6. エリアの周囲を柵で囲む指示を含める\n' +
+    '7. 具体的で視覚的に明確な英語表現を使う\n' +
+    '8. 日本特有の建造物は英語名に加えて括弧内に日本語名を補足する\n' +
+    '9. 1つのパラグラフにまとめ、200語以内にする\n' +
+    '10. プロンプトのテキストのみを出力し、説明や前置きは一切不要'
+
+  try {
+    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4.1-mini',
+        temperature: 0.3,
+        max_tokens: 800,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: draftPrompt  },
+        ],
+      }),
+    })
+
+    if (!openaiRes.ok) {
+      const errText = await openaiRes.text()
+      console.error('OpenAI API error:', openaiRes.status, errText)
+      return c.json({ success: false, error: `OpenAI API error: ${openaiRes.status}` }, 502)
+    }
+
+    const openaiData = await openaiRes.json() as {
+      choices: { message: { content: string } }[]
+    }
+    const refinedPrompt = openaiData.choices?.[0]?.message?.content?.trim()
+
+    if (!refinedPrompt) {
+      return c.json({ success: false, error: 'Empty response from OpenAI' }, 502)
+    }
+
+    return c.json({ success: true, refinedPrompt })
+
+  } catch (err) {
+    console.error('refine-prompt handler error:', err)
+    return c.json({ success: false, error: 'Internal server error' }, 500)
+  }
+})
 
 // Cloudflare Pagesでは public/ 内の静的ファイルは
 // 自動的に静的アセットとして配信される。
