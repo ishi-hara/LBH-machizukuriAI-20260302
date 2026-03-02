@@ -1,46 +1,86 @@
 /**
  * まちづくりAI - app.js
  * ================================================
- * このファイルはアプリのメインロジックを管理します。
- * 現時点では各関数のスタブ（骨格）のみ実装しています。
- * 実際の処理は今後のステップで追加します。
+ * チャットボットロジック（質問フロー実装済み）
  * ================================================
  */
 
 /* ================================================
+   状態管理
+================================================ */
+let currentStep = 1;  // 現在の質問番号（1〜5）
+let answers = {};     // 全回答を保存するオブジェクト
+let isComposing = false; // IME変換中フラグ
+
+/* ================================================
+   質問定義
+   ※ Q1 は初期表示済みのため sendMessage では使わない
+     （Q2〜Q5 を currentStep === 2〜5 のときに表示）
+================================================ */
+const QUESTIONS = {
+  2: (a) => `${a.buildingType}ですね！どんな雰囲気がお好みですか？（例：和風、洋風、近未来的、レトロ、ファンタジー風など）`,
+  3: (a) => `${a.atmosphere}な${a.buildingType}、素敵ですね！周囲の環境はどんな感じがいいですか？（例：緑豊かな公園風、石畳の広場、桜並木、花壇のある庭園など）`,
+  4: ()  => `季節や時間帯の希望はありますか？（例：春の昼間、夏の夕暮れ、冬の朝、秋の夕方、特になしなど）`,
+  5: ()  => `最後に、他に追加したい要素や注意点はありますか？（例：人が歩いている様子、噴水がほしい、ベンチを置きたい、特になしなど）`,
+};
+
+/* ================================================
+   回答の保存先キー（step → answersのキー名）
+================================================ */
+const ANSWER_KEYS = {
+  1: 'buildingType',
+  2: 'atmosphere',
+  3: 'surroundings',
+  4: 'timeOfDay',
+  5: 'additionalNotes',
+};
+
+/* ================================================
    DOM 参照（DOMContentLoaded 後に取得）
 ================================================ */
-let chatMessages;  // チャット履歴コンテナ
-let chatInput;     // テキスト入力欄
-let sendButton;    // 送信ボタン
-let resultSection; // 生成結果セクション
-let resultLoading; // ローディングDiv
-let resultImageWrapper; // 生成画像ラッパー
-let resultImage;   // 生成画像タグ
-let resultActions; // アクションボタンエリア
-let downloadButton;// ダウンロードボタン
+let chatMessages;
+let chatInput;
+let sendButton;
+let resultSection;
+let resultLoading;
+let resultImageWrapper;
+let resultImage;
+let resultActions;
+let downloadButton;
 
 document.addEventListener('DOMContentLoaded', () => {
-  // DOM 要素の取得
-  chatMessages        = document.getElementById('chatMessages');
-  chatInput           = document.getElementById('chatInput');
-  sendButton          = document.getElementById('sendButton');
-  resultSection       = document.getElementById('resultSection');
-  resultLoading       = document.getElementById('resultLoading');
-  resultImageWrapper  = document.getElementById('resultImageWrapper');
-  resultImage         = document.getElementById('resultImage');
-  resultActions       = document.getElementById('resultActions');
-  downloadButton      = document.getElementById('downloadButton');
+  chatMessages       = document.getElementById('chatMessages');
+  chatInput          = document.getElementById('chatInput');
+  sendButton         = document.getElementById('sendButton');
+  resultSection      = document.getElementById('resultSection');
+  resultLoading      = document.getElementById('resultLoading');
+  resultImageWrapper = document.getElementById('resultImageWrapper');
+  resultImage        = document.getElementById('resultImage');
+  resultActions      = document.getElementById('resultActions');
+  downloadButton     = document.getElementById('downloadButton');
 
-  // Enterキー送信イベントリスナー
+  // --- IME 変換中フラグ管理 ---
+  chatInput.addEventListener('compositionstart', () => {
+    isComposing = true;
+  });
+  chatInput.addEventListener('compositionend', () => {
+    isComposing = false;
+  });
+
+  // --- Enterキー送信（IME変換中は無視） ---
   chatInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !isComposing) {
       event.preventDefault();
       sendMessage();
     }
   });
 
-  // 入力欄フォーカス時のスクロール補正（モバイルキーボード対策）
+  // --- 送信ボタンクリック ---
+  sendButton.addEventListener('click', () => {
+    sendMessage();
+  });
+
+  // --- 入力欄フォーカス時のスクロール補正（モバイルキーボード対策） ---
   chatInput.addEventListener('focus', () => {
     setTimeout(() => {
       chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -49,133 +89,234 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ================================================
-   関数スタブ
+   sendMessage()
+   ユーザーのメッセージを処理し、次のAI質問を表示する
 ================================================ */
-
-/**
- * sendMessage
- * ----------------------------------------
- * チャット入力欄のテキストを取得し、
- * ユーザーメッセージをUIに追加した後、
- * AI応答フローを開始する。
- *
- * TODO:
- *  - 入力バリデーション
- *  - addMessage() 呼び出し
- *  - 質問フロー制御（ステップ管理）
- *  - 全質問完了後に buildPrompt() → generateImage() 実行
- */
 function sendMessage() {
-  // TODO: 実装予定
-  console.log('[sendMessage] called');
+  const text = chatInput.value.trim();
+
+  // 1. 空文字・空白のみの場合は何もしない
+  if (text === '') return;
+
+  // 2. ユーザーメッセージをチャットに追加
+  addMessage(text, true);
+
+  // 3. 入力欄をクリア
+  chatInput.value = '';
+
+  // 4. 現在のステップに対応するキーに回答を保存
+  const key = ANSWER_KEYS[currentStep];
+  if (key) {
+    answers[key] = text;
+  }
+
+  // 5. ステップをインクリメント
+  currentStep++;
+
+  // 6. 次のAI応答を表示（タイピング演出つき）
+  if (currentStep <= 5) {
+    // Q2〜Q5 を表示
+    showTypingThenMessage(QUESTIONS[currentStep](answers));
+  } else {
+    // 全5問完了 → 確認メッセージを表示して画像生成へ
+    const summary =
+      `ありがとうございます！以下の内容で画像を生成しますね。\n` +
+      `🏗 建造物: ${answers.buildingType}\n` +
+      `🎨 雰囲気: ${answers.atmosphere}\n` +
+      `🌳 周囲: ${answers.surroundings}\n` +
+      `🕐 季節/時間帯: ${answers.timeOfDay}\n` +
+      `✨ 追加要素: ${answers.additionalNotes}\n\n` +
+      `画像の生成を開始します...しばらくお待ちください！`;
+
+    // 入力欄・送信ボタンを無効化
+    setInputDisabled(true);
+
+    showTypingThenMessage(summary, () => {
+      // AIメッセージ表示から1秒後に generateImage() 呼び出し
+      setTimeout(() => {
+        generateImage();
+      }, 1000);
+    });
+  }
 }
 
-/**
- * addMessage
- * ----------------------------------------
- * チャット履歴エリアにメッセージバブルを追加する。
- *
- * @param {string}  text   - 表示するメッセージ文字列
- * @param {boolean} isUser - true: ユーザーバブル / false: AIバブル
- *
- * TODO:
- *  - バブルDOM要素の生成
- *  - isUser に応じてクラスを切り替え
- *  - アバターアイコン（🤖）の付与（AI側）
- *  - 追加後に最下部へ自動スクロール
- */
+/* ================================================
+   addMessage(text, isUser)
+   チャットエリアにメッセージバブルを追加する
+================================================ */
 function addMessage(text, isUser) {
-  // TODO: 実装予定
-  console.log('[addMessage] called', { text, isUser });
+  // ---- ラッパー ----
+  const messageDiv = document.createElement('div');
+  messageDiv.classList.add('chat-message');
+  messageDiv.classList.add(isUser ? 'chat-message--user' : 'chat-message--ai');
+
+  // ---- AI側のアバターアイコン ----
+  if (!isUser) {
+    const avatar = document.createElement('div');
+    avatar.classList.add('chat-message__avatar');
+    avatar.setAttribute('aria-hidden', 'true');
+    avatar.textContent = '🤖';
+    messageDiv.appendChild(avatar);
+  }
+
+  // ---- バブル本体（改行を <br> に変換） ----
+  const bubble = document.createElement('div');
+  bubble.classList.add('chat-message__bubble');
+  bubble.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+  messageDiv.appendChild(bubble);
+
+  chatMessages.appendChild(messageDiv);
+
+  // ---- 自動スクロール ----
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-/**
- * buildPrompt
- * ----------------------------------------
- * ユーザーの回答オブジェクトから、
- * 画像生成用プロンプトの草案を組み立てる。
- *
- * @param  {Object} answers - ユーザー回答のキーバリューオブジェクト
- * @return {string}          - 組み立てたプロンプト文字列（英語）
- *
- * TODO:
- *  - 必要な情報（建造物の種類、スタイル、色など）をテンプレートに埋め込む
- *  - 日本語入力を英語プロンプトに変換するロジック
- */
+/* ================================================
+   showTypingThenMessage(text, onShown)
+   タイピングインジケーター（「...」）を表示後、
+   実際のAIメッセージに差し替えるタイミング制御
+   - ユーザー送信から 0.5秒後 → インジケーター表示
+   - インジケーター表示から 0.8秒後 → AIメッセージ表示
+================================================ */
+function showTypingThenMessage(text, onShown) {
+  // 0.5秒後にタイピングインジケーターを挿入
+  setTimeout(() => {
+    const indicator = createTypingIndicator();
+    chatMessages.appendChild(indicator);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // さらに0.8秒後にインジケーターを削除してAIメッセージ表示
+    setTimeout(() => {
+      indicator.remove();
+      addMessage(text, false);
+      if (typeof onShown === 'function') {
+        onShown();
+      }
+    }, 800);
+  }, 500);
+}
+
+/* ================================================
+   createTypingIndicator()
+   「...」タイピングインジケーターのDOM要素を生成して返す
+================================================ */
+function createTypingIndicator() {
+  const wrapper = document.createElement('div');
+  wrapper.classList.add('chat-message', 'chat-message--ai', 'chat-message--typing');
+
+  const avatar = document.createElement('div');
+  avatar.classList.add('chat-message__avatar');
+  avatar.setAttribute('aria-hidden', 'true');
+  avatar.textContent = '🤖';
+
+  const bubble = document.createElement('div');
+  bubble.classList.add('chat-message__bubble', 'chat-message__bubble--typing');
+  bubble.setAttribute('aria-label', '入力中');
+  // 3つのドットをspan要素で作成（CSSアニメーション用）
+  bubble.innerHTML =
+    '<span class="typing-dot"></span>' +
+    '<span class="typing-dot"></span>' +
+    '<span class="typing-dot"></span>';
+
+  wrapper.appendChild(avatar);
+  wrapper.appendChild(bubble);
+  return wrapper;
+}
+
+/* ================================================
+   setInputDisabled(disabled)
+   入力欄・送信ボタンの有効/無効を切り替える
+================================================ */
+function setInputDisabled(disabled) {
+  chatInput.disabled = disabled;
+  sendButton.disabled = disabled;
+  if (disabled) {
+    chatInput.placeholder = '入力が完了しました';
+  } else {
+    chatInput.placeholder = 'メッセージを入力...';
+  }
+}
+
+/* ================================================
+   escapeHtml(str)
+   XSS対策: ユーザー入力をHTMLエスケープする
+================================================ */
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* ================================================
+   buildPrompt(answers)
+   ユーザーの回答から画像生成プロンプト草案を組み立てる
+   （次ステップで実装予定）
+================================================ */
 function buildPrompt(answers) {
-  // TODO: 実装予定
   console.log('[buildPrompt] called', { answers });
   return '';
 }
 
-/**
- * refinePrompt
- * ----------------------------------------
- * buildPrompt() で生成した草案プロンプトを、
- * LLM（ChatGPT 等）に投げて最適化・洗練する。
- *
- * @param  {string} draftPrompt - buildPrompt() が返した草案
- * @return {Promise<string>}    - LLM が返した最適化済みプロンプト
- *
- * TODO:
- *  - OpenAI / Cloudflare AI API の呼び出し
- *  - エラーハンドリング（失敗時は draftPrompt をそのまま返す）
- */
+/* ================================================
+   refinePrompt(draftPrompt)
+   LLMでプロンプトを最適化する
+   （次ステップで実装予定）
+================================================ */
 async function refinePrompt(draftPrompt) {
-  // TODO: 実装予定
   console.log('[refinePrompt] called', { draftPrompt });
   return draftPrompt;
 }
 
-/**
- * generateImage
- * ----------------------------------------
- * 最終プロンプトと元画像（マスク付き）を使い、
- * インペインティングAPIを呼び出して画像を生成する。
- * 生成中はローディング表示、完了後に結果を表示する。
- *
- * TODO:
- *  - resultSection を表示（display: block）
- *  - ローディングスピナーを表示
- *  - API（OpenAI Images Edit 等）を呼び出す
- *  - 成功時: 生成画像を resultImage に設定し、アクションボタンを表示
- *  - 失敗時: エラーメッセージをチャットに追加
- */
+/* ================================================
+   generateImage()
+   画像生成APIを呼び出す
+   （次ステップで実装予定）
+================================================ */
 async function generateImage() {
-  // TODO: 実装予定
-  console.log('[generateImage] called');
+  console.log('generateImage called');
 }
 
-/**
- * downloadImage
- * ----------------------------------------
- * 生成された画像を端末にダウンロードする。
- *
- * @param {string} url - ダウンロードする画像のURL
- *
- * TODO:
- *  - <a> タグの download 属性を使ったダウンロード処理
- *  - ファイル名を動的に設定（例: machizukuri-ai_20240101.png）
- */
+/* ================================================
+   downloadImage(url)
+   生成画像をダウンロードする
+   （次ステップで実装予定）
+================================================ */
 function downloadImage(url) {
-  // TODO: 実装予定
   console.log('[downloadImage] called', { url });
 }
 
-/**
- * resetChat
- * ----------------------------------------
- * チャット履歴と生成結果をリセットし、
- * 初期状態（AIの最初のメッセージのみ）に戻す。
- *
- * TODO:
- *  - chatMessages の子要素を削除（初期AIメッセージを除く）
- *  - resultSection を非表示（display: none）
- *  - resultImage.src をクリア
- *  - 入力欄をクリア・フォーカス
- *  - ステップカウンターをリセット
- */
+/* ================================================
+   resetChat()
+   チャットと生成結果を初期状態にリセットする
+================================================ */
 function resetChat() {
-  // TODO: 実装予定
-  console.log('[resetChat] called');
+  // チャット履歴を初期AIメッセージのみ残してクリア
+  // （最初の .chat-message--ai 要素だけ残す）
+  const allMessages = chatMessages.querySelectorAll('.chat-message');
+  allMessages.forEach((el, index) => {
+    if (index > 0) el.remove(); // 最初のAIメッセージ（index=0）は残す
+  });
+
+  // 生成結果セクションを非表示
+  resultSection.style.display = 'none';
+  resultImageWrapper.style.display = 'none';
+  resultActions.style.display = 'none';
+  if (resultImage) resultImage.src = '';
+
+  // 状態をリセット
+  currentStep = 1;
+  answers = {};
+
+  // 入力欄を有効化してクリア・フォーカス
+  setInputDisabled(false);
+  chatInput.value = '';
+  chatInput.focus();
+
+  // スクロールをトップへ
+  chatMessages.scrollTop = 0;
+
+  console.log('[resetChat] done');
 }
