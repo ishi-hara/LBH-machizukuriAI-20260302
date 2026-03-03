@@ -1,100 +1,81 @@
 # まちづくりAI
 
 ## プロジェクト概要
+- **名称**: まちづくりAI
+- **目的**: 駅前の花壇エリアに、AIがユーザーの要望に沿った建造物画像を生成するSPA
+- **主な機能**:
+  - 5問チャットで建造物・雰囲気・周囲環境・季節/時間帯・追加要素を収集
+  - GPT-4.1-mini で日本語→英語プロンプト最適化
+  - fal.ai NanaBananaPro (inpainting) で画像生成（ポーリング方式）
+  - 元画像 / 生成結果をタブで切り替え表示
+  - ダウンロード・やり直し機能
 
-スマホブラウザで動作する、画像インペインティング（マスク部分の置換）Webアプリ。  
-駅周辺の写真の白くマスクされた部分に、ユーザーが指定した建造物をAI画像生成で合成します。
-
----
-
-## 現在完了している機能（ステップ1: UI骨格）
-
-- [x] ヘッダー（アプリ名「まちづくりAI」、青背景50px）
-- [x] 元画像表示エリア（指定URL画像＋注記テキスト）
-- [x] チャットエリア（LINEライクUI、AI初期メッセージ表示、Enterキー送信対応）
-- [x] 画像生成結果エリア（初期非表示、CSSスピナー、ダウンロード・やり直しボタン）
-- [x] モバイルファーストCSS（375px〜430px基準）
-- [x] Noto Sans JP フォント適用
-
----
-
-## 機能エントリポイント（URI一覧）
-
-| パス | 内容 |
-|---|---|
-| `GET /` | メインページ（HTML） |
-| `GET /static/styles.css` | スタイルシート |
-| `GET /static/app.js` | フロントエンドJavaScript |
-
----
+## URL
+- **開発サーバー**: http://localhost:3000
+- **サンドボックス**: https://3000-i3r50dcbzi8z7sieikxd0-c07dda5e.sandbox.novita.ai
 
 ## ファイル構成
-
 ```
 webapp/
-├── src/
-│   └── index.tsx          # Honoバックエンド（HTML配信）
-├── public/
-│   ├── index.html         # 静的HTMLテンプレート（参照用）
-│   └── static/
-│       ├── styles.css     # モバイルファーストCSS
-│       └── app.js         # フロントエンドJS（空関数スタブ）
-├── dist/                  # ビルド成果物（自動生成）
-├── ecosystem.config.cjs   # PM2設定
-├── wrangler.jsonc          # Cloudflare設定
-├── vite.config.ts         # Viteビルド設定
+├── src/index.tsx              # Hono バックエンド（API + HTML 配信）
+├── public/static/
+│   ├── styles.css             # モバイルファースト CSS
+│   └── app.js                 # チャットボット・画像生成ロジック
+├── .dev.vars                  # ローカル環境変数（.gitignore 済み）
+├── ecosystem.config.cjs       # PM2 起動設定
+├── wrangler.jsonc             # Cloudflare Pages 設定
 └── package.json
 ```
 
----
-
-## app.js 空関数スタブ一覧
-
-| 関数名 | 役割 | 実装状況 |
+## API エンドポイント
+| エンドポイント | メソッド | 説明 |
 |---|---|---|
-| `sendMessage()` | メッセージ送信処理 | スタブのみ |
-| `addMessage(text, isUser)` | チャットにメッセージ追加 | スタブのみ |
-| `buildPrompt(answers)` | プロンプト組み立て | スタブのみ |
-| `refinePrompt(draftPrompt)` | LLMでプロンプト最適化 | スタブのみ |
-| `generateImage()` | 画像生成 | スタブのみ |
-| `downloadImage(url)` | 画像ダウンロード | スタブのみ |
-| `resetChat()` | チャットリセット | スタブのみ |
+| `/api/refine-prompt` | POST | 日本語プロンプト → 英語最適化 (GPT-4.1-mini) |
+| `/api/generate-submit` | POST | fal.ai にジョブ投入、requestId 返却 |
+| `/api/generate-status?id=` | GET | ジョブステータス取得 (`IN_QUEUE` / `IN_PROGRESS` / `COMPLETED` / `FAILED`) |
+| `/api/generate-result?id=` | GET | 生成画像 URL 取得 |
 
----
+## 環境変数
+| 変数名 | 用途 |
+|---|---|
+| `OPENAI_API_KEY` | GPT-4.1-mini プロンプト最適化 |
+| `FAL_KEY` | fal.ai NanaBananaPro 画像生成 |
 
-## デプロイ情報
+**ローカル**: `.dev.vars` に記載（コミット対象外）  
+**本番**: `npx wrangler pages secret put OPENAI_API_KEY` で設定
 
-- **プラットフォーム**: Cloudflare Pages
-- **ステータス**: ローカル開発中
-- **技術スタック**: Hono + TypeScript + Vanilla JS + Tailwind CSS (CDN予定)
-- **最終更新**: 2026-03-02
+## チャット質問フロー
+| Step | 質問内容 | 回答キー |
+|---|---|---|
+| Q1 | どんな建造物を入れたいか | `buildingType` |
+| Q2 | 雰囲気（和風・洋風・近未来的など） | `atmosphere` |
+| Q3 | 周囲の環境（公園風・石畳など） | `surroundings` |
+| Q4 | 季節・時間帯 | `timeOfDay` |
+| Q5 | 追加要素・注意点 | `additionalNotes` |
 
----
+## スキップキーワード（部分一致）
+`なし` `ない` `なんでも` `特に` `とくに` `任せ`
 
-## 未実装（次のステップ）
-
-- [ ] `sendMessage()` の実装（質問フロー制御）
-- [ ] `addMessage()` の実装（バブルDOM生成）
-- [ ] `buildPrompt()` / `refinePrompt()` の実装（LLM連携）
-- [ ] `generateImage()` の実装（OpenAI Images Edit API連携）
-- [ ] `downloadImage()` の実装
-- [ ] `resetChat()` の実装
-- [ ] Cloudflare Pagesへの本番デプロイ
-
----
-
-## ローカル開発
-
-```bash
-# 依存関係インストール
-npm install
-
-# ビルド
-npm run build
-
-# PM2で起動（ポート3000）
-pm2 start ecosystem.config.cjs
-
-# ログ確認
-pm2 logs webapp --nostream
+## データフロー
 ```
+ユーザー入力 (5問)
+  → buildPrompt() → 日本語ドラフト
+  → refinePrompt() → POST /api/refine-prompt → GPT-4.1-mini → 英語プロンプト
+  → POST /api/generate-submit → fal.ai キュー投入 → requestId
+  → ポーリング GET /api/generate-status (3秒間隔・最大360秒)
+  → GET /api/generate-result → imageUrl
+  → displayResult() → タブUI表示・ダウンロード有効化
+```
+
+## 使い方
+1. ページを開くと AI からの最初の質問が表示される
+2. 5つの質問に答える（「特になし」「お任せします」などでスキップ可）
+3. 画像生成が開始（通常1〜2分）
+4. 生成完了後、タブで「元画像」「生成結果」を切り替えて確認
+5. 「画像をダウンロード」で保存、「もう一度やり直す」でリセット
+
+## デプロイ
+- **プラットフォーム**: Cloudflare Pages
+- **ステータス**: 🚧 ローカル開発中
+- **技術スタック**: Hono + TypeScript + TailwindCSS (CDN) + fal.ai + OpenAI
+- **最終更新**: 2026-03-03
