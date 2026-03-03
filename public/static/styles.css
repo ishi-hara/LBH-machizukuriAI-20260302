@@ -150,7 +150,11 @@ input {
   box-shadow: 0 2px 8px var(--color-shadow);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* overflow:hidden だと sticky な input-area が safe-area 外にはみ出したとき
+     送信ボタンを切ってしまうため clip に変更。
+     clip は hidden と同様に描画を切るが、スクロールコンテナを作らないので
+     sticky positioning が正しく機能する。 */
+  overflow: clip;
 }
 
 /* メッセージ表示エリア */
@@ -258,17 +262,22 @@ input {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+  /* 上下: 通常padding / 右: safe-area-inset-right でボタン切れ防止 / 左: 通常padding */
   padding: var(--spacing-sm) var(--spacing-md);
+  padding-right: calc(var(--spacing-md) + env(safe-area-inset-right, 0px));
   /* iPhone ホームバー（safe-area）対応 */
   padding-bottom: calc(var(--spacing-sm) + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--color-border);
   background-color: var(--color-white);
   position: sticky;
   bottom: 0;
+  width: 100%;       /* 100vw 不使用を明示（スクロールバー分のはみ出し防止） */
+  box-sizing: border-box;
 }
 
 .chat-section__input {
   flex: 1;
+  min-width: 0;      /* flex item が縮小しすぎないよう最小幅を明示 */
   height: 44px;
   min-height: 44px; /* Apple HIG タップターゲット最小サイズ */
   padding: 0 var(--spacing-md);
@@ -291,7 +300,10 @@ input {
 
 /* 送信ボタン（丸型） */
 .chat-section__send-btn {
+  flex: none;        /* flex アイテムとして伸縮しない */
+  flex-shrink: 0;    /* 縮小禁止（明示） */
   width: 44px;
+  min-width: 44px;   /* Apple HIG タップターゲット最小幅 */
   height: 44px;
   min-height: 44px; /* Apple HIG タップターゲット最小サイズ */
   border-radius: var(--radius-send);
@@ -300,7 +312,6 @@ input {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   transition: background-color 0.2s ease, transform 0.1s ease;
   box-shadow: 0 2px 6px rgba(33, 150, 243, 0.4);
 }
