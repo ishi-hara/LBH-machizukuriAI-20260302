@@ -1,0 +1,21 @@
+{
+  "name": "まちづくりAI",
+  "short_name": "まちづくりAI",
+  "description": "AIで街の風景に建造物を生成するアプリ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F5F5F5",
+  "theme_color": "#2196F3",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

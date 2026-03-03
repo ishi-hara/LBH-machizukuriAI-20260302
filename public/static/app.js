@@ -14,6 +14,7 @@ let isComposing = false;    // IME変換中フラグ
 let intervalId = null;      // タイマーの setInterval ID
 let elapsedSeconds = 0;     // 経過秒数
 let generatedImageUrl = ''; // 生成画像URL（downloadImage に渡す）
+let isGenerating = false;   // 画像生成中フラグ（beforeunload 用）
 
 /* ================================================
    質問定義
@@ -100,6 +101,16 @@ document.addEventListener('DOMContentLoaded', () => {
   if (resetButton) {
     resetButton.addEventListener('click', () => resetChat());
   }
+
+  // --- 生成中のページ離脱を警告（beforeunload） ---
+  window.addEventListener('beforeunload', (event) => {
+    if (isGenerating) {
+      event.preventDefault();
+      // Chrome では returnValue を設定する必要がある
+      event.returnValue = '画像を生成中です。ページを離れると生成がキャンセルされます。';
+      return event.returnValue;
+    }
+  });
 });
 
 /* ================================================
@@ -307,7 +318,6 @@ function buildPrompt(answers) {
     ? `${base}\n${extras.join('\n')}`
     : base;
 
-  console.log('[buildPrompt] draft:\n', draftPrompt);
   return draftPrompt;
 }
 
@@ -326,7 +336,6 @@ async function refinePrompt(draftPrompt) {
     });
     const data = await response.json();
     if (data.success) {
-      console.log('[refinePrompt] refined:', data.refinedPrompt);
       return data.refinedPrompt;
     } else {
       console.warn('[refinePrompt] LLM refinement failed, using draft prompt:', data.error);
@@ -343,13 +352,19 @@ async function refinePrompt(draftPrompt) {
    プロンプト最適化 → fal.ai への投入・ポーリング・結果取得
 ================================================ */
 async function generateImage() {
+  // ---- オフライン確認 ----
+  if (!navigator.onLine) {
+    addMessage('📡 インターネット接続を確認してください。接続が回復してから「もう一度やり直す」を押してください。', false);
+    return;
+  }
+
+  isGenerating = true;
+
   try {
     // ---- Phase 1: プロンプト最適化（既存のまま） ----
     const draftPrompt = buildPrompt(answers);
-    console.log('Draft prompt:', draftPrompt);
     addMessage('プロンプトを最適化中...🔄', false);
     const finalPrompt = await refinePrompt(draftPrompt);
-    console.log('Final prompt:', finalPrompt);
 
     // ---- Phase 2: 画像生成 ----
     addMessage('画像を生成中です...🎨\n1〜3分ほどかかる場合があります。', false);
@@ -366,7 +381,6 @@ async function generateImage() {
     if (!submitData.success) throw new Error(submitData.error);
 
     const requestId = submitData.requestId;
-    console.log('Request ID:', requestId);
 
     // Step B: ステータスポーリング（3秒間隔、最大120回 = 360秒）
     let status = 'IN_QUEUE';
@@ -379,7 +393,7 @@ async function generateImage() {
       const statusData = await statusRes.json();
       status = statusData.status;
       pollCount++;
-      console.log(`Poll ${pollCount}: ${status}`);
+
     }
 
     if (status === 'FAILED') {
@@ -397,12 +411,14 @@ async function generateImage() {
     // ---- Phase 3: 結果表示 ----
     stopTimer();
     hideLoading();
+    isGenerating = false;
     displayResult(resultData.imageUrl);
     addMessage('✅ 画像の生成が完了しました！\n上の画像エリアで確認できます。\nタブで元画像と切り替えられます。', false);
 
   } catch (error) {
     stopTimer();
     hideLoading();
+    isGenerating = false;
     console.error('Generation error:', error);
     addMessageWithRetry('❌ ' + error.message);
   }
@@ -645,6 +661,7 @@ function resetChat() {
   currentStep = 1;
   answers = {};
   generatedImageUrl = '';
+  isGenerating = false;
 
   // ---- 入力欄を有効化してクリア・フォーカス ----
   setInputDisabled(false);
@@ -654,5 +671,5 @@ function resetChat() {
   // ---- スクロールをトップへ ----
   chatMessages.scrollTop = 0;
 
-  console.log('[resetChat] done');
+
 }

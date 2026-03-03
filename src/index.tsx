@@ -245,15 +245,35 @@ app.get('/api/generate-result', async (c) => {
 // Cloudflare Pagesでは public/ 内の静的ファイルは
 // 自動的に静的アセットとして配信される。
 // Workerは動的なリクエストのみ処理する。
+// manifest.json を明示的に返す（ローカル開発用フォールバック）
+app.get('/manifest.json', (c) => {
+  return c.json({
+    name: 'まちづくりAI',
+    short_name: 'まちづくりAI',
+    description: 'AIで街の風景に建造物を生成するアプリ',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#F5F5F5',
+    theme_color: '#2196F3',
+    icons: [
+      { src: '/static/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/static/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+  })
+})
+
 // ルートへのアクセスは index.html を返す
 app.get('/', (c) => {
   return c.html(/* html */`<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
   <meta name="theme-color" content="#2196F3" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <title>まちづくりAI</title>
+  <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232196F3'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='white'%3E%F0%9F%8F%99%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -278,7 +298,7 @@ app.get('/', (c) => {
         src="https://raw.githubusercontent.com/ishi-hara/LBH-image001/main/001-motogazou-station01.jpg"
         alt="駅周辺の元画像（花壇のエリアに建造物を生成します）"
         class="original-image-section__img"
-        loading="eager"
+        loading="lazy"
       />
     </div>
     <p class="original-image-section__note">※花壇のエリアに建造物が生成されます</p>
