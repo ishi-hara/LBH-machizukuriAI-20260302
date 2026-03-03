@@ -8,9 +8,12 @@
 /* ================================================
    状態管理
 ================================================ */
-let currentStep = 1;  // 現在の質問番号（1〜5）
-let answers = {};     // 全回答を保存するオブジェクト
-let isComposing = false; // IME変換中フラグ
+let currentStep = 1;       // 現在の質問番号（1〜5）
+let answers = {};           // 全回答を保存するオブジェクト
+let isComposing = false;    // IME変換中フラグ
+let intervalId = null;      // タイマーの setInterval ID
+let elapsedSeconds = 0;     // 経過秒数
+let generatedImageUrl = ''; // 生成画像URL（downloadImage に渡す）
 
 /* ================================================
    質問定義
@@ -86,6 +89,17 @@ document.addEventListener('DOMContentLoaded', () => {
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }, 300);
   });
+
+  // --- ダウンロードボタン ---
+  downloadButton.addEventListener('click', () => {
+    downloadImage(generatedImageUrl);
+  });
+
+  // --- やり直しボタン ---
+  const resetButton = document.getElementById('resetButton');
+  if (resetButton) {
+    resetButton.addEventListener('click', () => resetChat());
+  }
 });
 
 /* ================================================
@@ -380,35 +394,212 @@ async function generateImage() {
     const resultData = await resultRes.json();
     if (!resultData.success) throw new Error(resultData.error);
 
-    // ---- Phase 3: 結果表示（次ステップで完全実装、今はURLをチャットに表示） ----
+    // ---- Phase 3: 結果表示 ----
     stopTimer();
     hideLoading();
-    addMessage('✅ 画像生成完了！\n画像URL: ' + resultData.imageUrl, false);
+    displayResult(resultData.imageUrl);
+    addMessage('✅ 画像の生成が完了しました！\n上の画像エリアで確認できます。\nタブで元画像と切り替えられます。', false);
 
   } catch (error) {
     stopTimer();
     hideLoading();
     console.error('Generation error:', error);
-    addMessage('❌ ' + error.message, false);
+    addMessageWithRetry('❌ ' + error.message);
   }
 }
 
 /* ================================================
-   showLoading / hideLoading / startTimer / stopTimer
-   （次ステップで完全実装予定）
+   showLoading()
+   resultSection を表示し、スピナー・経過時間要素を可視化する
 ================================================ */
-function showLoading() { console.log('showLoading'); }
-function hideLoading() { console.log('hideLoading'); }
-function startTimer() { console.log('startTimer'); }
-function stopTimer() { console.log('stopTimer'); }
+function showLoading() {
+  resultSection.style.display = 'block';
+  resultLoading.style.display = 'flex';
+  resultImageWrapper.style.display = 'none';
+  resultActions.style.display = 'none';
+
+  // 経過時間要素を resultLoading 内に動的追加（なければ）
+  if (!document.getElementById('elapsed-time')) {
+    const elapsedEl = document.createElement('p');
+    elapsedEl.id = 'elapsed-time';
+    elapsedEl.className = 'result-section__loading-text';
+    elapsedEl.textContent = '経過時間: 0秒';
+    resultLoading.appendChild(elapsedEl);
+  } else {
+    document.getElementById('elapsed-time').textContent = '経過時間: 0秒';
+  }
+
+  // resultSection が画面内に入るようスクロール
+  resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/* ================================================
+   hideLoading()
+   スピナー・生成中テキスト・経過時間を非表示にする
+================================================ */
+function hideLoading() {
+  resultLoading.style.display = 'none';
+  const elapsedEl = document.getElementById('elapsed-time');
+  if (elapsedEl) elapsedEl.textContent = '';
+}
+
+/* ================================================
+   startTimer()
+   1秒ごとに経過時間を更新する
+================================================ */
+function startTimer() {
+  elapsedSeconds = 0;
+  clearInterval(intervalId); // 念のため既存タイマーをクリア
+  intervalId = setInterval(() => {
+    elapsedSeconds++;
+    const elapsedEl = document.getElementById('elapsed-time');
+    if (elapsedEl) {
+      elapsedEl.textContent = `経過時間: ${elapsedSeconds}秒`;
+    }
+  }, 1000);
+}
+
+/* ================================================
+   stopTimer()
+   タイマーを停止する
+================================================ */
+function stopTimer() {
+  clearInterval(intervalId);
+  intervalId = null;
+}
+
+/* ================================================
+   displayResult(imageUrl)
+   タブUIを生成し、生成画像を表示する。
+   ダウンロード・やり直しボタンも有効化する。
+================================================ */
+function displayResult(imageUrl) {
+  // グローバルに保存（downloadImage で使用）
+  generatedImageUrl = imageUrl;
+
+  // ---- 既存の original-image-section を取得 ----
+  const originalSection = document.querySelector('.original-image-section');
+
+  // ---- タブコンテナを original-image-section の直前に挿入 ----
+  // すでに存在する場合は再生成しない
+  let tabContainer = document.getElementById('tab-container');
+  if (!tabContainer) {
+    tabContainer = document.createElement('div');
+    tabContainer.id = 'tab-container';
+    tabContainer.className = 'tab-container';
+    tabContainer.innerHTML =
+      '<button class="tab-btn" id="tab-original" onclick="switchTab(\'original\')">元画像</button>' +
+      '<button class="tab-btn tab-btn--active" id="tab-result" onclick="switchTab(\'result\')">生成結果</button>';
+    originalSection.parentNode.insertBefore(tabContainer, originalSection);
+  }
+
+  // ---- original-image-section を tab-image-section スタイルに切り替え ----
+  // （マージン・角丸の連結をタブ直下に合わせる）
+  originalSection.classList.add('tab-image-section');
+
+  // ---- 生成結果の img を resultImageWrapper に設定 ----
+  resultImage.src = imageUrl;
+  resultImage.style.touchAction = 'pinch-zoom';
+  resultImage.alt = 'AI生成画像';
+
+  // ---- 生成結果タブをアクティブ → 元画像を非表示、生成画像を表示 ----
+  originalSection.style.display = 'none';
+
+  resultSection.style.display = 'block';
+  resultLoading.style.display = 'none';
+  resultImageWrapper.style.display = 'block';
+  resultActions.style.display = 'flex';
+
+  // ---- 結果エリアにノートテキストを追加（なければ） ----
+  if (!document.getElementById('result-note')) {
+    const note = document.createElement('p');
+    note.id = 'result-note';
+    note.className = 'tab-image-section__note';
+    note.textContent = '※ 画像はピンチズームで拡大できます';
+    resultImageWrapper.insertAdjacentElement('afterend', note);
+  }
+
+  // 結果エリアを画面内にスクロール
+  resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/* ================================================
+   switchTab(tab)
+   'original' または 'result' を受け取り表示を切り替える
+================================================ */
+function switchTab(tab) {
+  const originalSection = document.querySelector('.original-image-section');
+  const tabOriginal = document.getElementById('tab-original');
+  const tabResult   = document.getElementById('tab-result');
+
+  if (tab === 'original') {
+    // 元画像を表示、結果エリアを非表示
+    originalSection.style.display = 'block';
+    resultSection.style.display = 'none';
+    tabOriginal.classList.add('tab-btn--active');
+    tabResult.classList.remove('tab-btn--active');
+  } else {
+    // 生成結果を表示、元画像を非表示
+    originalSection.style.display = 'none';
+    resultSection.style.display = 'block';
+    tabOriginal.classList.remove('tab-btn--active');
+    tabResult.classList.add('tab-btn--active');
+  }
+}
+
+/* ================================================
+   addMessageWithRetry(errorText)
+   エラーメッセージ＋「もう一度やり直す」ボタンを
+   チャットバブルとして追加する専用関数
+================================================ */
+function addMessageWithRetry(errorText) {
+  const messageDiv = document.createElement('div');
+  messageDiv.classList.add('chat-message', 'chat-message--ai');
+
+  const avatar = document.createElement('div');
+  avatar.classList.add('chat-message__avatar');
+  avatar.setAttribute('aria-hidden', 'true');
+  avatar.textContent = '🤖';
+
+  const bubble = document.createElement('div');
+  bubble.classList.add('chat-message__bubble');
+  // エラー文言（XSSエスケープ） + 改行 + やり直しボタン
+  bubble.innerHTML =
+    escapeHtml(errorText).replace(/\n/g, '<br>') +
+    '<br><button class="chat-retry-btn" onclick="resetChat()">↩ もう一度やり直す</button>';
+
+  messageDiv.appendChild(avatar);
+  messageDiv.appendChild(bubble);
+  chatMessages.appendChild(messageDiv);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
 
 /* ================================================
    downloadImage(url)
-   生成画像をダウンロードする
-   （次ステップで実装予定）
+   生成画像を端末にダウンロードする。
+   fetch→blob DL を試み、iOS等で失敗した場合は
+   window.open にフォールバックして長押し保存を案内する。
 ================================================ */
-function downloadImage(url) {
-  console.log('[downloadImage] called', { url });
+async function downloadImage(url) {
+  if (!url) return;
+  try {
+    addMessage('📥 ダウンロードを準備中...', false);
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = 'machizukuri_ai_result.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+    addMessage('✅ ダウンロードが開始されました！', false);
+  } catch (error) {
+    console.warn('Direct download failed:', error);
+    addMessage('📱 画像を長押しして「画像を保存」を選んでください。', false);
+    window.open(url, '_blank');
+  }
 }
 
 /* ================================================
@@ -423,22 +614,44 @@ function resetChat() {
     if (index > 0) el.remove(); // 最初のAIメッセージ（index=0）は残す
   });
 
-  // 生成結果セクションを非表示
+  // ---- タブUIを削除 ----
+  const tabContainer = document.getElementById('tab-container');
+  if (tabContainer) tabContainer.remove();
+
+  // ---- 元画像セクションを元のスタイルに戻す ----
+  const originalSection = document.querySelector('.original-image-section');
+  if (originalSection) {
+    originalSection.classList.remove('tab-image-section');
+    originalSection.style.display = ''; // インラインスタイルをクリア
+  }
+
+  // ---- result-note を削除 ----
+  const resultNote = document.getElementById('result-note');
+  if (resultNote) resultNote.remove();
+
+  // ---- 生成結果セクションを非表示 ----
   resultSection.style.display = 'none';
   resultImageWrapper.style.display = 'none';
   resultActions.style.display = 'none';
   if (resultImage) resultImage.src = '';
 
-  // 状態をリセット
+  // ---- 経過時間をクリア ----
+  stopTimer();
+  const elapsedEl = document.getElementById('elapsed-time');
+  if (elapsedEl) elapsedEl.textContent = '';
+  elapsedSeconds = 0;
+
+  // ---- 状態をリセット ----
   currentStep = 1;
   answers = {};
+  generatedImageUrl = '';
 
-  // 入力欄を有効化してクリア・フォーカス
+  // ---- 入力欄を有効化してクリア・フォーカス ----
   setInputDisabled(false);
   chatInput.value = '';
   chatInput.focus();
 
-  // スクロールをトップへ
+  // ---- スクロールをトップへ ----
   chatMessages.scrollTop = 0;
 
   console.log('[resetChat] done');
