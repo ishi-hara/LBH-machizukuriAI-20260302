@@ -95,6 +95,17 @@ const IMAGE_SET_ID = 3
 | 2 | 002-motogazou-station01.jpg | 002-white01.png |
 | 3 | 003-motogazou-amagasaki.jpg | 003-white01.png |
 
+### IMAGE_SETS の各フィールド
+
+| フィールド | 役割 |
+|---|---|
+| `original` | 画面に表示する元画像のファイル名 |
+| `mask` | fal.ai に渡すマスク画像のファイル名（白塗りエリアが生成対象） |
+| `sceneDescription` | 元画像の場所説明。systemPrompt の背景情報「元画像は〜の写真です」に展開される |
+| `maskAreaLabel` | 白く塗った範囲の呼び名。画面の alt・注記・チャット初期メッセージに展開される |
+| `maskAreaDetail` | マスク範囲の位置・形状の補足。systemPrompt の背景情報「マスク画像で〜」に展開される |
+| `edgeTreatmentRule` | エッジ処理ルール。柵の有無など画像セットごとに異なる指示を systemPrompt ルール6に展開される。セット1・2は柵あり、セット3は芝生との自然な馴染みを指示 |
+
 - 存在しない値を設定した場合はセット1にフォールバックします
 - 変更後は `npm run build` でリビルドし、デプロイしてください
 
@@ -103,7 +114,7 @@ const IMAGE_SET_ID = 3
 - **プロジェクト名**: machizukuri-ai
 - **ステータス**: ✅ 本番稼働中
 - **技術スタック**: Hono + TypeScript + fal.ai NanoBananaPro + OpenAI GPT-4.1-mini
-- **最終デプロイ**: 2026-08-28
+- **最終デプロイ**: 2026-08-28（画像セット動的化対応）
 
 ## 今後の改善候補
 - チャット質問の追加・カスタマイズ
