@@ -9,8 +9,22 @@ type Bindings = {
 // fal.ai のエンドポイント定数
 const FAL_SUBMIT_URL  = 'https://queue.fal.run/fal-ai/nano-banana-pro/edit'
 const FAL_QUEUE_BASE  = 'https://queue.fal.run/fal-ai/nano-banana-pro/requests'
-// インペインティングに使用するマスク済み画像（白塗りつぶし済み）
-const MASK_IMAGE_URL = 'https://raw.githubusercontent.com/ishi-hara/LBH-image001/main/001-white01.png'
+
+// ===== 画像セット切替用グローバル変数 =====
+// 1 / 2 / 3 のいずれかを設定する（今回は 3 にする）
+const IMAGE_SET_ID = 3
+
+const IMAGE_BASE_URL = 'https://raw.githubusercontent.com/ishi-hara/LBH-image001/main'
+
+const IMAGE_SETS: Record<number, { original: string; mask: string }> = {
+  1: { original: '001-motogazou-station01.jpg', mask: '001-white01.png' },
+  2: { original: '002-motogazou-station01.jpg', mask: '002-white01.png' },
+  3: { original: '003-motogazou-amagasaki.jpg', mask: '003-white01.png' },
+}
+
+const CURRENT_IMAGE_SET  = IMAGE_SETS[IMAGE_SET_ID] ?? IMAGE_SETS[1]
+const ORIGINAL_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.original}`
+const MASK_IMAGE_URL     = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.mask}`
 
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -295,7 +309,7 @@ app.get('/', (c) => {
   <section class="original-image-section">
     <div class="original-image-section__wrapper">
       <img
-        src="https://raw.githubusercontent.com/ishi-hara/LBH-image001/main/001-motogazou-station01.jpg"
+        src="${ORIGINAL_IMAGE_URL}"
         alt="駅周辺の元画像（花壇のエリアに建造物を生成します）"
         class="original-image-section__img"
         loading="lazy"

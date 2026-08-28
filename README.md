@@ -81,12 +81,29 @@ webapp/
 4. 生成完了後、タブで「元画像」「生成結果」を切り替えて確認
 5. 「画像をダウンロード」で保存、「もう一度やり直す」でリセット
 
+## 画像セットの切り替え
+元画像とマスク画像はセットで管理されており、`src/index.tsx` の冒頭にある `IMAGE_SET_ID` を変更するだけで切り替えられます。
+
+```typescript
+// 1 / 2 / 3 のいずれかを設定する
+const IMAGE_SET_ID = 3
+```
+
+| ID | 元画像ファイル | マスク画像ファイル |
+|---|---|---|
+| 1 | 001-motogazou-station01.jpg | 001-white01.png |
+| 2 | 002-motogazou-station01.jpg | 002-white01.png |
+| 3 | 003-motogazou-amagasaki.jpg | 003-white01.png |
+
+- 存在しない値を設定した場合はセット1にフォールバックします
+- 変更後は `npm run build` でリビルドし、デプロイしてください
+
 ## デプロイ
 - **プラットフォーム**: Cloudflare Pages
 - **プロジェクト名**: machizukuri-ai
 - **ステータス**: ✅ 本番稼働中
 - **技術スタック**: Hono + TypeScript + fal.ai NanoBananaPro + OpenAI GPT-4.1-mini
-- **最終デプロイ**: 2026-03-03
+- **最終デプロイ**: 2026-08-28
 
 ## 今後の改善候補
 - チャット質問の追加・カスタマイズ
