@@ -167,7 +167,7 @@ app.post('/api/generate-submit', async (c) => {
       },
       body: JSON.stringify({
         prompt,
-        image_urls: [MASK_IMAGE_URL],
+        image_urls: [ORIGINAL_IMAGE_URL, MASK_IMAGE_URL],
         num_images: 1,
         aspect_ratio: 'auto',
         output_format: 'png',
@@ -269,7 +269,16 @@ app.get('/api/generate-result', async (c) => {
 
     const resultData = await resultRes.json() as {
       images?: { url: string }[]
+      detail?: { msg?: string; type?: string }[]
     }
+
+    // fal.ai が invalid_request を返した場合（COMPLETED でも detail エラーになる）
+    if (resultData.detail && resultData.detail.length > 0) {
+      const msg = resultData.detail[0]?.msg ?? 'fal.ai invalid_request'
+      console.error('fal.ai result detail error:', msg)
+      return c.json({ success: false, error: '画像の生成に失敗しました。プロンプトや入力画像を変えてお試しください。' }, 502)
+    }
+
     const imageUrl = resultData.images?.[0]?.url
 
     if (!imageUrl) {
