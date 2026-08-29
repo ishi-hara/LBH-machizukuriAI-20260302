@@ -14,7 +14,7 @@ const FAL_QUEUE_BASE  = 'https://queue.fal.run/fal-ai/nano-banana-pro/requests'
 // 1 / 2 / 3 のいずれかを設定する（今回は 3 にする）
 const IMAGE_SET_ID = 3
 
-const IMAGE_BASE_URL = 'https://raw.githubusercontent.com/ishi-hara/LBH-image001/main'
+const IMAGE_BASE_URL = 'https://machizukuri-ai.pages.dev/static/images'
 
 const IMAGE_SETS: Record<number, {
   original: string
@@ -42,7 +42,7 @@ const IMAGE_SETS: Record<number, {
   },
   3: {
     original: '003-motogazou-amagasaki.jpg',
-    mask: '003-white01.png',
+    mask: '003-white01.jpg',
     sceneDescription: '阪神タイガースのファーム施設「ゼロカーボンベースボールパーク」に隣接する公園の芝生広場',
     maskAreaLabel: '芝生広場のエリア',
     maskAreaDetail: '画像下半分の芝生広場の大部分が、横長の角丸形状で白く塗りつぶされています。背景の球場施設・照明塔・ネット・階段は編集対象外です',
