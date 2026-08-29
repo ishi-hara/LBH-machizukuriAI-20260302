@@ -168,7 +168,7 @@ app.post('/api/generate-submit', async (c) => {
       },
       body: JSON.stringify({
         prompt,
-        image_urls: [ORIGINAL_IMAGE_URL, MASK_IMAGE_URL],
+        image_urls: [MASK_IMAGE_URL],
         num_images: 1,
         aspect_ratio: 'auto',
         output_format: 'png',
