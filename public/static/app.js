@@ -298,7 +298,7 @@ function buildPrompt(answers) {
     // systemPrompt ルール6（edgeTreatmentRule）で一元管理する
     `また、アニメ風やイラストではなく、実写写真風・フォトリアル寄りにすること。\n` +
     `一方で、建物、道路、通路、高架構造物、その他すべての建築要素は元の画像のまま保持する。\n` +
-    `ただし、${answers.buildingType}の画像が途中で切れないようにする。`;
+    `ただし、${answers.buildingType}や樹木などの追加要素が、マスクの境界で途中で切れないようにする。`;
 
   // ---- 追加情報（スキップ対象外のみ付加） ----
   const extras = [];
