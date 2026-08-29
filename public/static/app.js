@@ -8,7 +8,7 @@
 /* ================================================
    状態管理
 ================================================ */
-let currentStep = 1;       // 現在の質問番号（1〜5）
+let currentStep = 1;       // 現在の質問番号（1〜6）
 let answers = {};           // 全回答を保存するオブジェクト
 let isComposing = false;    // IME変換中フラグ
 let intervalId = null;      // タイマーの setInterval ID
@@ -19,24 +19,26 @@ let isGenerating = false;   // 画像生成中フラグ（beforeunload 用）
 /* ================================================
    質問定義
    ※ Q1 は初期表示済みのため sendMessage では使わない
-     （Q2〜Q5 を currentStep === 2〜5 のときに表示）
+     （Q2〜Q6 を currentStep === 2〜6 のときに表示）
 ================================================ */
 const QUESTIONS = {
-  2: (a) => `${a.buildingType}ですね！どんな雰囲気がお好みですか？（例：和風、洋風、近未来的、レトロ、ファンタジー風など）`,
-  3: (a) => `${a.atmosphere}な${a.buildingType}、素敵ですね！周囲の環境はどんな感じがいいですか？（例：緑豊かな公園風、石畳の広場、桜並木、花壇のある庭園など）`,
-  4: ()  => `季節や時間帯の希望はありますか？（例：春の昼間、夏の夕暮れ、冬の朝、秋の夕方、特になしなど）`,
-  5: ()  => `最後に、他に追加したい要素や注意点はありますか？（例：人が歩いている様子、噴水がほしい、ベンチを置きたい、特になしなど）`,
+  2: () => `どんな人たちが、どんな気持ちで、何をして過ごす施設ですか？\n（例：小学生のいる親子連れ家族が、楽しくおしゃべりしながら、お弁当を広げて寛げる広場　など）`,
+  3: () => `どんなスタイルがお好みですか？　もし、施設の規模・階数や造りなども希望があれば（無くても大丈夫です）教えてください。\n（例：和風、洋風、近未来的、レトロ、ファンタジー風、木造２階建ての瓦葺き、２階建ての全面ガラス張り　など）`,
+  4: () => `周囲の環境はどんな感じがいいですか？　追加したい設備・備品・装飾なども希望があれば（無くても大丈夫です）教えてください。\n（例：緑豊か、花々に囲まれている、桜の並木、一面の芝生、おしゃれな石畳、周囲には木製のベンチ、片隅に時計台、パーティー会場のような飾りつけ　など）`,
+  5: () => `季節や時間帯の希望はありますか？\n（例：春の昼間、夏の夕暮れ、秋の黄昏れ、冬の朝、なし　など）`,
+  6: () => `最後に、他に追加したい要素や、こだわりたい点はありますか？\n（例：ペットも一緒に遊んでいる、空には花火があがっている、なし　など）`,
 };
 
 /* ================================================
    回答の保存先キー（step → answersのキー名）
 ================================================ */
 const ANSWER_KEYS = {
-  1: 'buildingType',
-  2: 'atmosphere',
-  3: 'surroundings',
-  4: 'timeOfDay',
-  5: 'additionalNotes',
+  1: 'facilityType',      // 創りたい施設
+  2: 'usageScene',        // 誰が・どんな気持ちで・何をする場所か
+  3: 'style',             // スタイル・規模・造り
+  4: 'surroundings',      // 周囲環境・設備・装飾
+  5: 'timeOfDay',         // 季節・時間帯
+  6: 'additionalNotes',   // 追加要素・こだわり
 };
 
 /* ================================================
@@ -139,18 +141,19 @@ function sendMessage() {
   currentStep++;
 
   // 6. 次のAI応答を表示（タイピング演出つき）
-  if (currentStep <= 5) {
-    // Q2〜Q5 を表示
-    showTypingThenMessage(QUESTIONS[currentStep](answers));
+  if (currentStep <= 6) {
+    // Q2〜Q6 を表示
+    showTypingThenMessage(QUESTIONS[currentStep]());
   } else {
-    // 全5問完了 → 確認メッセージを表示して画像生成へ
+    // 全6問完了 → 確認メッセージを表示して画像生成へ
     const summary =
       `ありがとうございます！以下の内容で画像を生成しますね。\n` +
-      `🏗 建造物: ${answers.buildingType}\n` +
-      `🎨 雰囲気: ${answers.atmosphere}\n` +
-      `🌳 周囲: ${answers.surroundings}\n` +
+      `🏗 施設: ${answers.facilityType}\n` +
+      `👥 過ごし方: ${answers.usageScene}\n` +
+      `🎨 スタイル: ${answers.style}\n` +
+      `🌳 周囲・設備: ${answers.surroundings}\n` +
       `🕐 季節/時間帯: ${answers.timeOfDay}\n` +
-      `✨ 追加要素: ${answers.additionalNotes}\n\n` +
+      `✨ こだわり: ${answers.additionalNotes}\n\n` +
       `画像の生成を開始します...しばらくお待ちください！`;
 
     // 入力欄・送信ボタンを無効化
@@ -290,20 +293,23 @@ function buildPrompt(answers) {
     return SKIP_KEYWORDS.some((kw) => value.includes(kw));
   };
 
-  // ---- ベーステンプレート（{buildingType} を置換） ----
+  // ---- ベーステンプレート ----
   const base =
-    `マスクした白のエリアを${answers.buildingType}をメインとした場所にする。\n` +
-    `${answers.buildingType}の周りは、${answers.buildingType}にあった雰囲気のものにすること。\n` +
+    `マスクした白のエリアを${answers.facilityType}をメインとした場所にする。\n` +
+    `${answers.facilityType}の周りは、${answers.facilityType}にあった雰囲気のものにすること。\n` +
     // 柵の要否は画像セットごとに異なるため、src/index.tsx の
     // systemPrompt ルール6（edgeTreatmentRule）で一元管理する
     `また、アニメ風やイラストではなく、実写写真風・フォトリアル寄りにすること。\n` +
     `一方で、建物、道路、通路、高架構造物、その他すべての建築要素は元の画像のまま保持する。\n` +
-    `ただし、${answers.buildingType}や樹木などの追加要素が、マスクの境界で途中で切れないようにする。`;
+    `ただし、${answers.facilityType}や樹木などの追加要素が、マスクの境界で途中で切れないようにする。`;
 
   // ---- 追加情報（スキップ対象外のみ付加） ----
   const extras = [];
-  if (!shouldSkip(answers.atmosphere)) {
-    extras.push(`雰囲気: ${answers.atmosphere}`);
+  if (!shouldSkip(answers.usageScene)) {
+    extras.push(`利用シーン・賑わい: ${answers.usageScene}`);
+  }
+  if (!shouldSkip(answers.style)) {
+    extras.push(`スタイル・造り: ${answers.style}`);
   }
   if (!shouldSkip(answers.surroundings)) {
     extras.push(`周囲の環境: ${answers.surroundings}`);
