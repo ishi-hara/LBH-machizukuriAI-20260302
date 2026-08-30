@@ -45,7 +45,7 @@ const IMAGE_SETS: Record<number, {
     mask: '003-motogazou-amagasaki.jpg',
     sceneDescription: '阪神タイガースのファーム施設「ゼロカーボンベースボールパーク」に隣接する公園の芝生広場',
     maskAreaLabel: '芝生広場のエリア',
-    maskAreaDetail: '変更対象は画像手前に広がる芝生の広場です。背景の球場施設・照明塔・防球ネット・階段・空はそのまま保持してください',
+    maskAreaDetail: '変更対象は画像手前に広がる芝生の広場です。背景の球場施設・照明塔・防球ネット・階段・空はそのまま保持してください。英語プロンプトでこのエリアを指す場合は必ず "the open grass lawn in the foreground" と呼ぶこと。mask / masked / white area / white region / white masked という語は一切使わないこと',
     edgeTreatmentRule: '新たに追加する要素の外周が、周囲の芝生・園路・地面と自然に馴染むようにし、不要な柵・フェンス・縁取りは追加しない指示を含める',
   },
 }
@@ -82,9 +82,9 @@ app.post('/api/refine-prompt', async (c) => {
     `背景情報:\n` +
     `- 元画像は${CURRENT_IMAGE_SET.sceneDescription}の写真です\n` +
     `- ${CURRENT_IMAGE_SET.maskAreaDetail}\n` +
-    `- 指定エリアの外側にある背景の建物・構造物は元画像のまま保持してください\n` +
-    `- ただし、追加する施設・建造物や樹木の上部は、指定エリアの上端を自然に越えて背景の前に描いてよい。エリア境界で水平に切り落とさないこと\n` +
-    `- 指定エリアは「絵を描き込むための枠やキャンバス」ではありません。写真の一部を自然な風景に差し替えるための領域です。完成画像に縁・角丸の輪郭・境界線・枠が残ってはいけません\n\n` +
+    `- 変更対象エリアの外側にある背景の建物・構造物は元画像のまま保持してください（領域の呼び方は上記の指示に従う）\n` +
+    `- ただし、追加する施設・建造物や樹木の上部は、変更対象エリアの上端を自然に越えて背景の前に描いてよい。エリア境界で水平に切り落とさないこと\n` +
+    `- 変更対象エリアは「絵を描き込むための枠やキャンバス」ではありません。写真の一部を自然な風景に差し替えるための領域です。完成画像に縁・角丸の輪郭・境界線・枠が残ってはいけません\n\n` +
     `ルール:\n` +
     `1. 生成する英語プロンプトの冒頭に必ず "photorealistic, real photograph, DSLR photo," と明記し、末尾にも "photorealistic real photograph, not anime, not illustration, not a painting, not CG, not a poster" と明記する\n` +
     `2. アニメ風・イラスト風・CG・ポスター風を明確に禁止する表現を入れる\n` +
