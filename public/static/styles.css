@@ -384,7 +384,7 @@ input {
   background-color: var(--color-white);
   border-radius: var(--radius-btn);
   box-shadow: 0 2px 8px var(--color-shadow);
-  overflow: hidden;
+  /* overflow: hidden は削除（iOS Safari で画像上のタッチドラッグがスクロールしないバグ対策） */
 }
 
 /* ---- ローディングアニメーション ---- */
@@ -429,12 +429,14 @@ input {
 .result-section__image-wrapper {
   width: 100%;
   line-height: 0;
+  touch-action: pan-y; /* 縦ドラッグをページスクロールとして処理 */
 }
 
 .result-section__image {
   width: 100%;
   height: auto;
   display: block;
+  touch-action: pan-y; /* 縦ドラッグをページスクロールとして処理 */
 }
 
 /* ---- アクションボタンエリア ---- */

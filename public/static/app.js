@@ -522,7 +522,7 @@ function displayResult(imageUrl) {
 
   // ---- 生成結果の img を resultImageWrapper に設定 ----
   resultImage.src = imageUrl;
-  resultImage.style.touchAction = 'pinch-zoom';
+  resultImage.style.touchAction = 'pan-y pinch-zoom'; // pan-y: 縦ドラッグをページスクロールに伝達
   resultImage.alt = 'AI生成画像';
 
   // ---- 生成結果タブをアクティブ → 元画像を非表示、生成画像を表示 ----
