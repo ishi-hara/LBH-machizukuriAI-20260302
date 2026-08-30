@@ -41,8 +41,8 @@ const IMAGE_SETS: Record<number, {
     edgeTreatmentRule: 'エリアの周囲を柵で囲む指示を含める',
   },
   3: {
-    original: '003-white02.jpg',
-    mask: '003-white02.jpg',
+    original: '003-motogazou-amagasaki.jpg',
+    mask: '003-motogazou-amagasaki.jpg',
     sceneDescription: '阪神タイガースのファーム施設「ゼロカーボンベースボールパーク」に隣接する公園の芝生広場',
     maskAreaLabel: '芝生広場のエリア',
     maskAreaDetail: '変更対象は画像手前に広がる芝生の広場です。背景の球場施設・照明塔・防球ネット・階段・空はそのまま保持してください。英語プロンプトでこのエリアを指す場合は必ず "the open grass lawn in the foreground" と呼ぶこと。mask / masked / white area / white region / white masked という語は一切使わないこと',
