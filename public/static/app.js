@@ -542,8 +542,8 @@ function displayResult(imageUrl) {
     resultImageWrapper.insertAdjacentElement('afterend', note);
   }
 
-  // 結果エリアを画面内にスクロール
-  resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // 結果エリアを画面内にスクロール（ボタンが確実に見えるよう block:'end'）
+  resultActions.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
 /* ================================================
