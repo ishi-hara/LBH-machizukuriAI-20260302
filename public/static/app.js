@@ -43,8 +43,29 @@ const NIGHTTIME_KEYWORDS = [
   '雨', '曇り', '霧', '嵐',
 ];
 
+// NIGHTTIME_KEYWORDS に存在しない語句のみを追加する拡張リスト
+// SKIP_EXTRA_ENABLED = false にすれば無効化され、修正前の挙動（雨・曇り含む）に戻る
+const SKIP_EXTRA_ENABLED = true;
+
+const SKIP_KEYWORDS_EXTRA = [
+  // (1) 時間帯・空の色（既存リストにない語句のみ）
+  '明け方', '夜明け', '朝焼け', '日の出', '日没', '月夜', '満月',
+  // (2) 空に描かれる要素
+  'ドローンショー', 'ドローン', '気球', '熱気球', '飛行船', '打ち上げ', 'レーザー',
+  // (3) 上部を覆う大型構造物
+  '屋根で覆', '屋根が覆', 'ガラスの屋根', '大屋根', 'ドーム', '天蓋', 'アーケード',
+];
+
 function shouldSkipComposite(text) {
-  return NIGHTTIME_KEYWORDS.some((kw) => text.includes(kw));
+  // SKIP_EXTRA_ENABLED=true: 既存リストから「雨」「曇り」を除き、EXTRA を結合して判定
+  // SKIP_EXTRA_ENABLED=false: 既存リスト（「雨」「曇り」含む）のみで判定（修正前の挙動）
+  const baseList = SKIP_EXTRA_ENABLED
+    ? NIGHTTIME_KEYWORDS.filter(kw => kw !== '雨' && kw !== '曇り')
+    : NIGHTTIME_KEYWORDS;
+  const effectiveList = SKIP_EXTRA_ENABLED
+    ? [...baseList, ...SKIP_KEYWORDS_EXTRA]
+    : baseList;
+  return effectiveList.some((kw) => text.includes(kw));
 }
 
 /* ================================================
