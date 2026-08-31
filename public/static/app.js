@@ -24,6 +24,7 @@ let compositeObjectUrl = null; // 合成済み画像の objectURL（ダウンロ
 ================================================ */
 const COMPOSITE_CUT_RATIO  = 0.30; // 区切り位置（元画像高さ比）→ 元画像高さ 1495px の 30% = 448px
 const COMPOSITE_FEATHER_PX = 60;   // グラデーション幅（px）：境界を目立たなくするブレンド幅
+const COMPOSITE_ENABLED    = true; // false にすると合成をスキップして生成画像をそのまま表示（デバッグ用）
 
 /* ================================================
    shouldSkipComposite(text)
@@ -538,9 +539,9 @@ async function displayResult(imageUrl) {
 
   // ---- 合成 or スキップ判定 ----
   let displayUrl;
-  if (skipComposite) {
-    // 夜景・夕景指定: 生成画像をそのまま表示
-    console.log('[composite] SKIP: 生成画像をそのまま表示');
+  if (skipComposite || !COMPOSITE_ENABLED) {
+    // 夜景・夕景指定 または COMPOSITE_ENABLED=false: 生成画像をそのまま表示
+    console.log(`[composite] SKIP: skipComposite=${skipComposite} / COMPOSITE_ENABLED=${COMPOSITE_ENABLED}`);
     compositeObjectUrl = null; // blob URL なし
     displayUrl = imageUrl;
     hideLoading();
@@ -628,10 +629,13 @@ async function compositeWithOriginal(generatedUrl) {
     img.src = src;
   });
 
+  const t0 = performance.now();
   const [genImg, origImg] = await Promise.all([
     loadImage(generatedUrl),
     loadImage(ORIG_URL),
   ]);
+  const t1 = performance.now();
+  console.log(`[composite] 画像ロード: ${Math.round(t1 - t0)}ms`);
 
   const gW = genImg.naturalWidth;
   const gH = genImg.naturalHeight;
@@ -641,55 +645,69 @@ async function compositeWithOriginal(generatedUrl) {
   const feather = COMPOSITE_FEATHER_PX;
   console.log(`[composite] genSize=${gW}x${gH} / cutY=${cutY} / feather=${feather}px`);
 
-  // Canvas を生成画像サイズで作成
-  const canvas = document.createElement('canvas');
-  canvas.width  = gW;
-  canvas.height = gH;
-  const ctx = canvas.getContext('2d');
-
-  // Step1: 生成画像を全面に描画
-  ctx.drawImage(genImg, 0, 0, gW, gH);
-
-  // Step2: 元画像を生成画像と同じサイズにスケーリングして一時 canvas に描画
-  // （aspect_ratio='4:3' 固定により縦横比が一致しているため、単純リサイズで縦位置が合う）
+  // ---- 元画像を生成画像サイズにリサイズして ImageData を取得 ----
   const origCanvas = document.createElement('canvas');
   origCanvas.width  = gW;
   origCanvas.height = gH;
   const origCtx = origCanvas.getContext('2d');
   origCtx.drawImage(origImg, 0, 0, gW, gH);
+  const origData = origCtx.getImageData(0, 0, gW, gH).data; // Uint8ClampedArray
 
-  // Step3: 上部（y=0 〜 cutY+feather）に元画像を重ねる
-  // グラデーションマスク：cutY-feather/2 〜 cutY+feather/2 の範囲で透明に抜ける
-  const gradient = ctx.createLinearGradient(0, cutY - feather / 2, 0, cutY + feather / 2);
-  gradient.addColorStop(0, 'rgba(0,0,0,1)');   // 上端：元画像100%
-  gradient.addColorStop(1, 'rgba(0,0,0,0)');   // 下端：元画像0%（生成画像が透過）
+  // ---- 生成画像の ImageData を取得 ----
+  const genCanvas = document.createElement('canvas');
+  genCanvas.width  = gW;
+  genCanvas.height = gH;
+  const genCtx = genCanvas.getContext('2d');
+  genCtx.drawImage(genImg, 0, 0, gW, gH);
+  const genData = genCtx.getImageData(0, 0, gW, gH).data;
 
-  // 元画像の上部をグラデーションマスクで合成
-  ctx.save();
-  // クリップ: y=0 〜 cutY+feather/2 の範囲のみ描画
-  ctx.beginPath();
-  ctx.rect(0, 0, gW, cutY + feather / 2);
-  ctx.clip();
+  // ---- 出力用 ImageData を作成してピクセル単位線形αブレンド ----
+  // y < fadeStart  → 元画像 100%
+  // fadeStart ≦ y < fadeEnd → 線形補間
+  // y ≧ fadeEnd   → 生成画像 100%
+  const fadeStart = cutY - Math.round(feather / 2);
+  const fadeEnd   = cutY + Math.round(feather / 2);
 
-  // 元画像を描画してからグラデーションで消す（destination-out で切り抜き）
-  ctx.drawImage(origCanvas, 0, 0, gW, gH);
-  ctx.globalCompositeOperation = 'destination-out';
-  ctx.fillStyle = gradient;
-  // 反転グラデ（下端が不透明 = 元画像を消す）
-  const gradientMask = ctx.createLinearGradient(0, cutY - feather / 2, 0, cutY + feather / 2);
-  gradientMask.addColorStop(0, 'rgba(0,0,0,0)');  // 上端：元画像を残す
-  gradientMask.addColorStop(1, 'rgba(0,0,0,1)');  // 下端：元画像を消す（生成画像を見せる）
-  ctx.fillStyle = gradientMask;
-  ctx.fillRect(0, 0, gW, cutY + feather / 2);
-  ctx.restore();
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width  = gW;
+  outCanvas.height = gH;
+  const outCtx = outCanvas.getContext('2d');
+  const outImgData = outCtx.createImageData(gW, gH);
+  const outData = outImgData.data;
+
+  for (let y = 0; y < gH; y++) {
+    // α: 1.0 = 元画像100%、0.0 = 生成画像100%
+    let alpha;
+    if (y <= fadeStart) {
+      alpha = 1.0;
+    } else if (y >= fadeEnd) {
+      alpha = 0.0;
+    } else {
+      alpha = 1.0 - (y - fadeStart) / (fadeEnd - fadeStart);
+    }
+
+    const rowOffset = y * gW * 4;
+    for (let x = 0; x < gW; x++) {
+      const i = rowOffset + x * 4;
+      outData[i]     = Math.round(origData[i]     * alpha + genData[i]     * (1 - alpha));
+      outData[i + 1] = Math.round(origData[i + 1] * alpha + genData[i + 1] * (1 - alpha));
+      outData[i + 2] = Math.round(origData[i + 2] * alpha + genData[i + 2] * (1 - alpha));
+      outData[i + 3] = 255; // 完全不透明
+    }
+  }
+
+  outCtx.putImageData(outImgData, 0, 0);
+  const t2 = performance.now();
+  console.log(`[composite] ピクセルブレンド: ${Math.round(t2 - t1)}ms / fadeStart=${fadeStart} fadeEnd=${fadeEnd}`);
 
   // Step4: canvas.toBlob() で objectURL を返す
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
+    outCanvas.toBlob((blob) => {
       if (!blob) { reject(new Error('canvas.toBlob failed')); return; }
       const url = URL.createObjectURL(blob);
       compositeObjectUrl = url; // ダウンロード用に保存
-      console.log(`[composite] 完了: objectURL=${url.slice(0, 30)}...`);
+      const t3 = performance.now();
+      console.log(`[composite] toBlob完了: ${Math.round(t3 - t2)}ms / objectURL=${url.slice(0, 30)}...`);
       resolve(url);
     }, 'image/png');
   });
