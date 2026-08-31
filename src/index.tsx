@@ -95,11 +95,12 @@ app.post('/api/refine-prompt', async (c) => {
     `7. 元画像の既存の建築要素（建物、道路、通路、高架構造物）を保持する指示を含める\n` +
     `8. 指定されたエリアのみを変更し、それ以外の領域は元画像のまま維持する指示にする\n` +
     `9. 新たに追加するすべての要素（施設・建造物・樹木・植栽・門・塀などを含む）が、指定エリアの境界や画像の端で不自然に途中で切れないよう指示する。樹木や建物の上部は指定エリアの境界で切り落とさず、背景の空や施設の手前に自然に重なってよい。追加する樹木・建造物は、指定エリアを上方に越えて背景の建物・壁・ネット・空の手前に自然に重なってよい。背景の構造物を保持するとは「描き替えない」という意味であり、手前に樹木・建造物が重なることを禁じるものではない。樹木は幹から枝葉の先端まで樹形全体を描き、水平線・壁の高さ・エリア上端で切り落とさないこと（trees and structures may extend upward and naturally overlap in front of the background wall, netting and sky; render complete tree crowns with full canopies, do not cut off treetops at any horizontal line, the background remains visible behind them）。ただし、重なりは背景の構造物を隠しすぎない範囲にとどめ、背景の建物の看板・屋根の輪郭が判別できる状態を保つこと\n` +
-    `10. ${CURRENT_IMAGE_SET.edgeTreatmentRule}\n` +
-    `11. 具体的で視覚的に明確な英語表現を使う\n` +
-    `12. 日本特有の建造物は英語名に加えて括弧内に日本語名を補足する\n` +
-    `13. 1つのパラグラフにまとめ、200語以内にする。語数が超過する場合は優先度の低い装飾的な描写を削って調整する\n` +
-    `14. プロンプトのテキストのみを出力し、説明や前置きは一切不要`
+    `10. 時間帯は元画像と同じ昼間の晴天を維持すること。夕景・夕焼け・薄暮・夜景・ライトアップ・花火・星空・雨天・曇天に変更してはならない。空は元画像と同じ明るい青空のままとする。照明の光源を主役にした演出も禁止する（keep the same daytime lighting and clear blue sky as the original photograph; do not change the scene to sunset, dusk, evening, night, illumination, fireworks, starry sky, rain or overcast weather; no nighttime or dramatic lighting）\n` +
+    `11. ${CURRENT_IMAGE_SET.edgeTreatmentRule}\n` +
+    `12. 具体的で視覚的に明確な英語表現を使う\n` +
+    `13. 日本特有の建造物は英語名に加えて括弧内に日本語名を補足する\n` +
+    `14. 1つのパラグラフにまとめ、200語以内にする。語数が超過する場合は優先度の低い装飾的な描写を削って調整する\n` +
+    `15. プロンプトのテキストのみを出力し、説明や前置きは一切不要`
 
   try {
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
