@@ -45,7 +45,7 @@ const IMAGE_SETS: Record<number, {
     mask: '003-motogazou-amagasaki.jpg',
     sceneDescription: '阪神タイガースのファーム施設「ゼロカーボンベースボールパーク」に隣接する公園の芝生広場',
     maskAreaLabel: '芝生広場のエリア',
-    maskAreaDetail: '変更対象は画像手前に広がる芝生の広場です。背景の球場施設・照明塔・防球ネット・階段・空はそのまま保持してください。英語プロンプトでこのエリアを指す場合は必ず "the open grass lawn in the foreground" と呼ぶこと。mask / masked / white area / white region / white masked という語は一切使わないこと',
+    maskAreaDetail: '変更対象は画像手前に広がる芝生の広場です。背景の球場施設・照明塔・防球ネット・階段・空はそのまま保持してください。英語プロンプトでこのエリアを指す場合は必ず "the open grass lawn in the foreground" と呼ぶこと。mask / masked / white area / white region / white masked という語は一切使わないこと。背景の球場施設は元画像とまったく同一のまま保持すること。具体的には、銀色の折板屋根と斜めの支柱を持つ観客スタンド、正面の青い「SGIスタジアム尼崎」の看板、黄色い幕とショップ入口があるコンクリートの低層棟、左右のコンクリート階段と手すり、黒い照明塔、高い防球ネット、青空。これらを別のデザインの建物に描き替える・様式を変える・作り直すことを禁止する。英語プロンプトには必ず次の表現を含めること: keep the existing stadium exactly as in the original photograph — the silver corrugated-metal grandstand roof, the blue signboard on its front, the concrete lower building with yellow banners, the concrete staircases with handrails, the black floodlight poles and the tall protective netting must remain pixel-identical to the original; do not redesign, restyle, replace or rebuild the stadium。背丈の高い樹木は画像の左右端に寄せて配置する',
     edgeTreatmentRule: '新たに追加する要素の外周が、周囲の芝生・園路・地面と自然に馴染むようにし、不要な柵・フェンス・縁取りは追加しない指示を含める',
   },
 }
@@ -94,7 +94,7 @@ app.post('/api/refine-prompt', async (c) => {
     `6. ユーザーが商店街・遊歩道・並木道など奥へ細長く伸びる通路状の情景を指定した場合も、元画像のカメラ視点を変更せず、手前に広がる空間として自然に配置する。視点を通路の正面に切り替えてはならない\n` +
     `7. 元画像の既存の建築要素（建物、道路、通路、高架構造物）を保持する指示を含める\n` +
     `8. 指定されたエリアのみを変更し、それ以外の領域は元画像のまま維持する指示にする\n` +
-    `9. 新たに追加するすべての要素（施設・建造物・樹木・植栽・門・塀などを含む）が、指定エリアの境界や画像の端で不自然に途中で切れないよう指示する。樹木や建物の上部は指定エリアの境界で切り落とさず、背景の空や施設の手前に自然に重なってよい。追加する樹木・建造物は、指定エリアを上方に越えて背景の建物・壁・ネット・空の手前に自然に重なってよい。背景の構造物を保持するとは「描き替えない」という意味であり、手前に樹木・建造物が重なることを禁じるものではない。樹木は幹から枝葉の先端まで樹形全体を描き、水平線・壁の高さ・エリア上端で切り落とさないこと（trees and structures may extend upward and naturally overlap in front of the background wall, netting and sky; render complete tree crowns with full canopies, do not cut off treetops at any horizontal line, the background remains visible behind them）\n` +
+    `9. 新たに追加するすべての要素（施設・建造物・樹木・植栽・門・塀などを含む）が、指定エリアの境界や画像の端で不自然に途中で切れないよう指示する。樹木や建物の上部は指定エリアの境界で切り落とさず、背景の空や施設の手前に自然に重なってよい。追加する樹木・建造物は、指定エリアを上方に越えて背景の建物・壁・ネット・空の手前に自然に重なってよい。背景の構造物を保持するとは「描き替えない」という意味であり、手前に樹木・建造物が重なることを禁じるものではない。樹木は幹から枝葉の先端まで樹形全体を描き、水平線・壁の高さ・エリア上端で切り落とさないこと（trees and structures may extend upward and naturally overlap in front of the background wall, netting and sky; render complete tree crowns with full canopies, do not cut off treetops at any horizontal line, the background remains visible behind them）。ただし、重なりは背景の構造物を隠しすぎない範囲にとどめ、背景の建物の看板・屋根の輪郭が判別できる状態を保つこと\n` +
     `10. ${CURRENT_IMAGE_SET.edgeTreatmentRule}\n` +
     `11. 具体的で視覚的に明確な英語表現を使う\n` +
     `12. 日本特有の建造物は英語名に加えて括弧内に日本語名を補足する\n` +
