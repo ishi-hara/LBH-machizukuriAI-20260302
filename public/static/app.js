@@ -15,6 +15,36 @@ let intervalId = null;      // タイマーの setInterval ID
 let elapsedSeconds = 0;     // 経過秒数
 let generatedImageUrl = ''; // 生成画像URL（downloadImage に渡す）
 let isGenerating = false;   // 画像生成中フラグ（beforeunload 用）
+let skipComposite = false;  // 合成スキップフラグ（夜景・夕景指定時は true）
+let compositeObjectUrl = null; // 合成済み画像の objectURL（ダウンロード用）
+
+/* ================================================
+   Canvas 合成 定数
+   元画像の上部を生成画像に重ねる際の区切り位置とグラデーション幅
+================================================ */
+const COMPOSITE_CUT_RATIO  = 0.30; // 区切り位置（元画像高さ比）→ 元画像高さ 1495px の 30% = 448px
+const COMPOSITE_FEATHER_PX = 60;   // グラデーション幅（px）：境界を目立たなくするブレンド幅
+
+/* ================================================
+   shouldSkipComposite(text)
+   ユーザー入力（6問の回答を結合した draftPrompt 全体）に
+   夜景・夕景・花火などの時間帯・照明ワードが含まれるか判定。
+   true の場合は Canvas 合成をスキップして生成画像をそのまま表示する。
+================================================ */
+const NIGHTTIME_KEYWORDS = [
+  '夜', '夜景', '夜間', '深夜',
+  '夕方', '夕暮れ', '夕焼け', '夕景', 'サンセット', '夕刻',
+  '薄暮', '黄昏', 'たそがれ',
+  '花火', 'hanabi',
+  'ライトアップ', 'イルミネーション', 'イルミ',
+  '照明演出', 'キャンドル', '提灯', 'ちょうちん',
+  '星空', '夜空', '星',
+  '雨', '曇り', '霧', '嵐',
+];
+
+function shouldSkipComposite(text) {
+  return NIGHTTIME_KEYWORDS.some((kw) => text.includes(kw));
+}
 
 /* ================================================
    質問定義
@@ -95,7 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- ダウンロードボタン ---
   downloadButton.addEventListener('click', () => {
-    downloadImage(generatedImageUrl);
+    // 合成済み画像がある場合はそちらを優先、なければ生成画像そのまま
+    downloadImage(compositeObjectUrl || generatedImageUrl);
   });
 
   // --- やり直しボタン ---
@@ -370,6 +401,11 @@ async function generateImage() {
   try {
     // ---- Phase 1: プロンプト最適化（既存のまま） ----
     const draftPrompt = buildPrompt(answers);
+
+    // 合成スキップ判定：6問の回答を結合した draftPrompt 全体を対象に判定
+    skipComposite = shouldSkipComposite(draftPrompt);
+    console.log(`[composite] skipComposite=${skipComposite} / draftPrompt snippet: "${draftPrompt.slice(0, 60)}..."`);
+
     addMessage('プロンプトを最適化中...🔄', false);
     const finalPrompt = await refinePrompt(draftPrompt);
 
@@ -415,11 +451,11 @@ async function generateImage() {
     const resultData = await resultRes.json();
     if (!resultData.success) throw new Error(resultData.error);
 
-    // ---- Phase 3: 結果表示 ----
+    // ---- Phase 3: 結果表示（合成 or スキップ） ----
     stopTimer();
-    hideLoading();
+    // hideLoading は compositeWithOriginal の完了後に呼ぶ（合成中はローディング継続）
     isGenerating = false;
-    displayResult(resultData.imageUrl);
+    await displayResult(resultData.imageUrl);
     addMessage('✅ 画像の生成が完了しました！\n上の画像エリアで確認できます。\nタブで元画像と切り替えられます。', false);
 
   } catch (error) {
@@ -496,9 +532,32 @@ function stopTimer() {
    タブUIを生成し、生成画像を表示する。
    ダウンロード・やり直しボタンも有効化する。
 ================================================ */
-function displayResult(imageUrl) {
+async function displayResult(imageUrl) {
   // グローバルに保存（downloadImage で使用）
   generatedImageUrl = imageUrl;
+
+  // ---- 合成 or スキップ判定 ----
+  let displayUrl;
+  if (skipComposite) {
+    // 夜景・夕景指定: 生成画像をそのまま表示
+    console.log('[composite] SKIP: 生成画像をそのまま表示');
+    compositeObjectUrl = null; // blob URL なし
+    displayUrl = imageUrl;
+    hideLoading();
+  } else {
+    // 通常ケース: 元画像の上部を重ねる Canvas 合成
+    console.log('[composite] EXECUTE: Canvas 合成を実行');
+    try {
+      displayUrl = await compositeWithOriginal(imageUrl);
+      hideLoading();
+    } catch (err) {
+      // 合成失敗時はフォールバックとして生成画像をそのまま表示
+      console.warn('[composite] 合成失敗、フォールバック:', err);
+      compositeObjectUrl = null;
+      displayUrl = imageUrl;
+      hideLoading();
+    }
+  }
 
   // ---- 既存の original-image-section を取得 ----
   const originalSection = document.querySelector('.original-image-section');
@@ -517,12 +576,11 @@ function displayResult(imageUrl) {
   }
 
   // ---- original-image-section を tab-image-section スタイルに切り替え ----
-  // （マージン・角丸の連結をタブ直下に合わせる）
   originalSection.classList.add('tab-image-section');
 
-  // ---- 生成結果の img を resultImageWrapper に設定 ----
-  resultImage.src = imageUrl;
-  resultImage.style.touchAction = 'pan-y pinch-zoom'; // pan-y: 縦ドラッグをページスクロールに伝達
+  // ---- 生成結果の img を resultImageWrapper に設定（1回だけ表示） ----
+  resultImage.src = displayUrl;
+  resultImage.style.touchAction = 'pan-y pinch-zoom';
   resultImage.alt = 'AI生成画像';
 
   // ---- 生成結果タブをアクティブ → 元画像を非表示、生成画像を表示 ----
@@ -542,8 +600,99 @@ function displayResult(imageUrl) {
     resultImageWrapper.insertAdjacentElement('afterend', note);
   }
 
-  // 結果エリアを画面内にスクロール（ボタンが確実に見えるよう block:'end'）
+  // 結果エリアを画面内にスクロール
   resultActions.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+/* ================================================
+   compositeWithOriginal(generatedUrl)
+   生成画像の上部に元画像の上部を Canvas で重ね合わせる。
+
+   手順:
+   1. 生成画像・元画像を両方ロード（CORS: anonymous）
+   2. Canvas を生成画像サイズで作成
+   3. 生成画像を全面に描画
+   4. 元画像を生成画像と同じ幅・高さにリサイズして描画（比率が 4:3 で固定されているため縦位置一致）
+   5. グラデーションマスクで境界を馴染ませ、上部のみ元画像を表示
+   6. canvas.toBlob() で objectURL を返す
+================================================ */
+async function compositeWithOriginal(generatedUrl) {
+  const ORIG_URL = '/static/images/003-motogazou-amagasaki.jpg';
+
+  // 画像を crossOrigin: anonymous でロード
+  const loadImage = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = (e) => reject(new Error(`画像ロード失敗: ${src}`));
+    img.src = src;
+  });
+
+  const [genImg, origImg] = await Promise.all([
+    loadImage(generatedUrl),
+    loadImage(ORIG_URL),
+  ]);
+
+  const gW = genImg.naturalWidth;
+  const gH = genImg.naturalHeight;
+
+  // 区切り位置（生成画像の高さ基準）
+  const cutY   = Math.round(gH * COMPOSITE_CUT_RATIO);
+  const feather = COMPOSITE_FEATHER_PX;
+  console.log(`[composite] genSize=${gW}x${gH} / cutY=${cutY} / feather=${feather}px`);
+
+  // Canvas を生成画像サイズで作成
+  const canvas = document.createElement('canvas');
+  canvas.width  = gW;
+  canvas.height = gH;
+  const ctx = canvas.getContext('2d');
+
+  // Step1: 生成画像を全面に描画
+  ctx.drawImage(genImg, 0, 0, gW, gH);
+
+  // Step2: 元画像を生成画像と同じサイズにスケーリングして一時 canvas に描画
+  // （aspect_ratio='4:3' 固定により縦横比が一致しているため、単純リサイズで縦位置が合う）
+  const origCanvas = document.createElement('canvas');
+  origCanvas.width  = gW;
+  origCanvas.height = gH;
+  const origCtx = origCanvas.getContext('2d');
+  origCtx.drawImage(origImg, 0, 0, gW, gH);
+
+  // Step3: 上部（y=0 〜 cutY+feather）に元画像を重ねる
+  // グラデーションマスク：cutY-feather/2 〜 cutY+feather/2 の範囲で透明に抜ける
+  const gradient = ctx.createLinearGradient(0, cutY - feather / 2, 0, cutY + feather / 2);
+  gradient.addColorStop(0, 'rgba(0,0,0,1)');   // 上端：元画像100%
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');   // 下端：元画像0%（生成画像が透過）
+
+  // 元画像の上部をグラデーションマスクで合成
+  ctx.save();
+  // クリップ: y=0 〜 cutY+feather/2 の範囲のみ描画
+  ctx.beginPath();
+  ctx.rect(0, 0, gW, cutY + feather / 2);
+  ctx.clip();
+
+  // 元画像を描画してからグラデーションで消す（destination-out で切り抜き）
+  ctx.drawImage(origCanvas, 0, 0, gW, gH);
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = gradient;
+  // 反転グラデ（下端が不透明 = 元画像を消す）
+  const gradientMask = ctx.createLinearGradient(0, cutY - feather / 2, 0, cutY + feather / 2);
+  gradientMask.addColorStop(0, 'rgba(0,0,0,0)');  // 上端：元画像を残す
+  gradientMask.addColorStop(1, 'rgba(0,0,0,1)');  // 下端：元画像を消す（生成画像を見せる）
+  ctx.fillStyle = gradientMask;
+  ctx.fillRect(0, 0, gW, cutY + feather / 2);
+  ctx.restore();
+
+  // Step4: canvas.toBlob() で objectURL を返す
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) { reject(new Error('canvas.toBlob failed')); return; }
+      const url = URL.createObjectURL(blob);
+      compositeObjectUrl = url; // ダウンロード用に保存
+      console.log(`[composite] 完了: objectURL=${url.slice(0, 30)}...`);
+      resolve(url);
+    }, 'image/png');
+  });
 }
 
 /* ================================================

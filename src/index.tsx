@@ -175,7 +175,7 @@ app.post('/api/generate-submit', async (c) => {
         prompt,
         image_urls: [MASK_IMAGE_URL],
         num_images: 1,
-        aspect_ratio: 'auto',
+        aspect_ratio: '4:3',  // 元画像 2000×1495 (比率1.338) に最も近い値
         output_format: 'png',
         resolution: '1K',
         limit_generations: true,
