@@ -102,10 +102,15 @@ app.post('/api/refine-prompt', async (c) => {
     return c.json({ success: false, error: 'Invalid JSON body' }, 400)
   }
 
+  const maskModeNote = CURRENT_IMAGE_SET.maskMode === 'white'
+    ? `${CURRENT_IMAGE_SET.maskAreaLabel}が白く塗りつぶされた画像を渡します。白い範囲が変更対象です。`
+    : `加工していない元画像を渡します。白い塗りは存在しないため、white / mask という語で領域を指してはいけません。`
+
   const systemPrompt =
     `あなたは画像生成AI向けのプロンプトエンジニアです。以下のルールに厳密に従って、入力された日本語の画像編集指示を、画像生成AIに最適化された英語プロンプトに変換してください。\n\n` +
     `背景情報:\n` +
     `- 元画像は${CURRENT_IMAGE_SET.sceneDescription}の写真です\n` +
+    `- ${maskModeNote}\n` +
     `- ${CURRENT_IMAGE_SET.maskAreaDetail}\n` +
     `- 変更対象エリアの外側にある背景の建物・構造物は元画像のまま保持してください（領域の呼び方は上記の指示に従う）\n` +
     `- ただし、追加する施設・建造物や樹木の上部は、変更対象エリアの上端を自然に越えて背景の前に描いてよい。エリア境界で水平に切り落とさないこと\n` +
@@ -200,7 +205,7 @@ app.post('/api/generate-submit', async (c) => {
         prompt,
         image_urls: [MASK_IMAGE_URL],
         num_images: 1,
-        aspect_ratio: '4:3',  // 元画像 2000×1495 (比率1.338) に最も近い値
+        aspect_ratio: CURRENT_IMAGE_SET.aspectRatio,  // セットごとの縦横比（セット1-3=4:3 / セット4=16:9）
         output_format: 'png',
         resolution: '1K',
         limit_generations: true,
