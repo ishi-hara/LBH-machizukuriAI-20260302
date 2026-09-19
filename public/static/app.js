@@ -22,7 +22,8 @@ let compositeObjectUrl = null; // 合成済み画像の objectURL（ダウンロ
    Canvas 合成 定数
    元画像の上部を生成画像に重ねる際の区切り位置とグラデーション幅
 ================================================ */
-const COMPOSITE_CUT_RATIO  = 0.30; // 区切り位置（元画像高さ比）→ 元画像高さ 1495px の 30% = 448px
+const COMPOSITE_CUT_RATIO =
+  (window.__IMAGE_SET__ && window.__IMAGE_SET__.compositeCutRatio) || 0.30;
 const COMPOSITE_FEATHER_PX = 60;   // グラデーション幅（px）：境界を目立たなくするブレンド幅
 const COMPOSITE_ENABLED    = true; // false にすると合成をスキップして生成画像をそのまま表示（デバッグ用）
 
@@ -634,12 +635,13 @@ async function displayResult(imageUrl) {
    1. 生成画像・元画像を両方ロード（CORS: anonymous）
    2. Canvas を生成画像サイズで作成
    3. 生成画像を全面に描画
-   4. 元画像を生成画像と同じ幅・高さにリサイズして描画（比率が 4:3 で固定されているため縦位置一致）
+   4. 元画像を生成画像と同じ幅・高さにリサイズして描画（元画像とaspectRatioを一致させてあるため縦位置一致）
    5. グラデーションマスクで境界を馴染ませ、上部のみ元画像を表示
    6. canvas.toBlob() で objectURL を返す
 ================================================ */
 async function compositeWithOriginal(generatedUrl) {
-  const ORIG_URL = '/static/images/003-motogazou-amagasaki.jpg';
+  const ORIG_URL = (window.__IMAGE_SET__ && window.__IMAGE_SET__.originalUrl)
+    || '/static/images/003-motogazou-amagasaki.jpg';
 
   // 画像を crossOrigin: anonymous でロード
   const loadImage = (src) => new Promise((resolve, reject) => {
@@ -663,7 +665,10 @@ async function compositeWithOriginal(generatedUrl) {
 
   // 区切り位置（生成画像の高さ基準）
   const cutY   = Math.round(gH * COMPOSITE_CUT_RATIO);
-  const feather = COMPOSITE_FEATHER_PX;
+  const featherRatio = window.__IMAGE_SET__ && window.__IMAGE_SET__.compositeFeatherRatio;
+  const feather = featherRatio
+    ? Math.max(12, Math.round(gH * featherRatio))
+    : COMPOSITE_FEATHER_PX;
   console.log(`[composite] genSize=${gW}x${gH} / cutY=${cutY} / feather=${feather}px`);
 
   // ---- 元画像を生成画像サイズにリサイズして ImageData を取得 ----

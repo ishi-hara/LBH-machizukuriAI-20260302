@@ -478,6 +478,13 @@ app.get('/', (c) => {
 
   </section>
 
+  <script>
+    window.__IMAGE_SET__ = {
+      originalUrl: '/static/images/${CURRENT_IMAGE_SET.original}',
+      compositeCutRatio: ${CURRENT_IMAGE_SET.compositeCutRatio},
+      compositeFeatherRatio: ${CURRENT_IMAGE_SET.compositeFeatherRatio ?? 'null'}
+    };
+  </script>
   <script src="/static/app.js"></script>
 </body>
 </html>`)
