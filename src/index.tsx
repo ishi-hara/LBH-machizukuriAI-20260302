@@ -482,7 +482,9 @@ app.get('/', (c) => {
     window.__IMAGE_SET__ = {
       originalUrl: '/static/images/${CURRENT_IMAGE_SET.original}',
       compositeCutRatio: ${CURRENT_IMAGE_SET.compositeCutRatio},
-      compositeFeatherRatio: ${CURRENT_IMAGE_SET.compositeFeatherRatio ?? 'null'}
+      compositeFeatherRatio: ${CURRENT_IMAGE_SET.compositeFeatherRatio ?? 'null'},
+      maskMode: '${CURRENT_IMAGE_SET.maskMode}',
+      maskAreaLabel: '${CURRENT_IMAGE_SET.maskAreaLabel}'
     };
   </script>
   <script src="/static/app.js"></script>
