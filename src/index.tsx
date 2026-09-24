@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import imageSetConfig from '../config/image-set.json'
 
 // Cloudflare Workers の環境変数型定義
 type Bindings = {
@@ -11,8 +12,8 @@ const FAL_SUBMIT_URL  = 'https://queue.fal.run/fal-ai/nano-banana-pro/edit'
 const FAL_QUEUE_BASE  = 'https://queue.fal.run/fal-ai/nano-banana-pro/requests'
 
 // ===== 画像セット切替用グローバル変数 =====
-// 1 / 2 / 3 / 4 のいずれかを設定する（今回は 3 にする）
-const IMAGE_SET_ID = 4
+// 切替は config/image-set.json の IMAGE_SET_ID を編集して npm run build で反映
+const IMAGE_SET_ID = imageSetConfig.IMAGE_SET_ID as 1 | 2 | 3 | 4
 
 const IMAGE_BASE_URL = 'https://machizukuri-ai.pages.dev/static/images'
 
