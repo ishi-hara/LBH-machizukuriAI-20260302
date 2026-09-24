@@ -70,7 +70,7 @@ const IMAGE_SETS: Record<number, {
     edgeTreatmentRule: '新たに追加する要素の外周が、周囲の舗装・園路・芝生と自然に馴染むようにし、不要な柵・フェンス・縁取りは追加しない指示を含める',
     maskMode: 'none',
     aspectRatio: '16:9',
-    compositeCutRatio: 0.45,
+    compositeCutRatio: 0.35,
     compositeFeatherRatio: 0.05,
   },
 }
