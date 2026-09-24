@@ -80,6 +80,14 @@ const CURRENT_IMAGE_SET  = IMAGE_SETS[IMAGE_SET_ID] ?? IMAGE_SETS[1]
 const ORIGINAL_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.original}`
 const MASK_IMAGE_URL     = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.mask}`
 
+// URLクエリ ?set=N のバリデーションヘルパー
+// 1〜4 以外の値・未指定の場合は config の IMAGE_SET_ID を返す
+const resolveImageSetId = (raw: string | undefined): 1 | 2 | 3 | 4 => {
+  const n = Number(raw)
+  if (n === 1 || n === 2 || n === 3 || n === 4) return n
+  return IMAGE_SET_ID
+}
+
 const app = new Hono<{ Bindings: Bindings }>()
 
 /* ================================================
@@ -93,12 +101,16 @@ app.post('/api/refine-prompt', async (c) => {
   }
 
   let draftPrompt: string
+  let setId: 1 | 2 | 3 | 4
+  let CURRENT_IMAGE_SET: typeof IMAGE_SETS[1]
   try {
     const body = await c.req.json()
     draftPrompt = body.draftPrompt
     if (!draftPrompt || typeof draftPrompt !== 'string') {
       return c.json({ success: false, error: 'draftPrompt is required' }, 400)
     }
+    setId = resolveImageSetId(body.setId !== undefined ? String(body.setId) : c.req.query('set'))
+    CURRENT_IMAGE_SET = IMAGE_SETS[setId]
   } catch {
     return c.json({ success: false, error: 'Invalid JSON body' }, 400)
   }
@@ -185,12 +197,18 @@ app.post('/api/generate-submit', async (c) => {
   }
 
   let prompt: string
+  let setId: 1 | 2 | 3 | 4
+  let CURRENT_IMAGE_SET: typeof IMAGE_SETS[1]
+  let MASK_IMAGE_URL: string
   try {
     const body = await c.req.json()
     prompt = body.prompt
     if (!prompt || typeof prompt !== 'string') {
       return c.json({ success: false, error: '必要なパラメータが不足しています' }, 400)
     }
+    setId = resolveImageSetId(body.setId !== undefined ? String(body.setId) : c.req.query('set'))
+    CURRENT_IMAGE_SET = IMAGE_SETS[setId]
+    MASK_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.mask}`
   } catch {
     return c.json({ success: false, error: '必要なパラメータが不足しています' }, 400)
   }
@@ -353,6 +371,9 @@ app.get('/manifest.json', (c) => {
 
 // ルートへのアクセスは index.html を返す
 app.get('/', (c) => {
+  const setId = resolveImageSetId(c.req.query('set'))
+  const CURRENT_IMAGE_SET  = IMAGE_SETS[setId]
+  const ORIGINAL_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.original}`
   return c.html(/* html */`<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -481,6 +502,7 @@ app.get('/', (c) => {
 
   <script>
     window.__IMAGE_SET__ = {
+      setId: ${setId},
       originalUrl: '/static/images/${CURRENT_IMAGE_SET.original}',
       compositeCutRatio: ${CURRENT_IMAGE_SET.compositeCutRatio},
       compositeFeatherRatio: ${CURRENT_IMAGE_SET.compositeFeatherRatio ?? 'null'},

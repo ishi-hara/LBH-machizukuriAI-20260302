@@ -400,7 +400,7 @@ async function refinePrompt(draftPrompt) {
     const response = await fetch('/api/refine-prompt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ draftPrompt: draftPrompt }),
+      body: JSON.stringify({ draftPrompt: draftPrompt, setId: (window.__IMAGE_SET__ && window.__IMAGE_SET__.setId) || 4 }),
     });
     const data = await response.json();
     if (data.success) {
@@ -448,7 +448,7 @@ async function generateImage() {
     const submitRes = await fetch('/api/generate-submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: finalPrompt }),
+      body: JSON.stringify({ prompt: finalPrompt, setId: (window.__IMAGE_SET__ && window.__IMAGE_SET__.setId) || 4 }),
     });
     const submitData = await submitRes.json();
     if (!submitData.success) throw new Error(submitData.error);
