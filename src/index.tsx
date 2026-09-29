@@ -13,7 +13,7 @@ const FAL_QUEUE_BASE  = 'https://queue.fal.run/fal-ai/nano-banana-pro/requests'
 
 // ===== 画像セット切替用グローバル変数 =====
 // 切替は config/image-set.json の IMAGE_SET_ID を編集して npm run build で反映
-const IMAGE_SET_ID = imageSetConfig.IMAGE_SET_ID as 1 | 2 | 3 | 4
+const IMAGE_SET_ID = imageSetConfig.IMAGE_SET_ID as 1 | 2 | 3 | 4 | 5
 
 const IMAGE_BASE_URL = 'https://machizukuri-ai.pages.dev/static/images'
 
@@ -75,6 +75,18 @@ const IMAGE_SETS: Record<number, {
     compositeCutRatio: 0.35,
     compositeFeatherRatio: 0.05,
   },
+  5: {
+    original: '005-motogazou-noseguchiminamiguchi.jpg',
+    mask: '005-mask-noseguchiminamiguchi-1.png',
+    sceneDescription: '阪急宝塚線・能勢電鉄の川西能勢口駅南口にあるペデストリアンデッキと駅前広場',
+    maskAreaLabel: '駅前広場のエリア',
+    maskAreaDetail: '変更対象は、画像手前から中央・右側に広がる白いマスク領域であり、駅前広場とペデストリアンデッキの床面、およびその上に新しい建造物・植栽等を配置する空間です。英語プロンプトでこのエリアを指す場合は必ず "the station-front plaza and pedestrian deck area in the foreground and center-right" と呼ぶこと。白い塗りは変更対象の範囲を示すための目印であり、完成画像に白い面・白い壁・白い舗装・白い空白として残してはならない。白い範囲は新しい建造物とその足元の床で隙間なく埋めること。英語プロンプトには必ず次を含めること: the white area marks the region to be replaced and must be completely filled with the new building, its surrounding paved floor and planting; no white surfaces, white walls, white panels or blank white areas may remain in the final image; do not render the region as a framed picture, canvas or inserted panel; no visible border, no outline, no rounded-corner edge, seamless blend with the surrounding photograph。背景として必ず保持するのは、画像左側の阪急電鉄・能勢電鉄「川西能勢口駅」の駅舎とその外壁、駅舎の「川西能勢口駅」「阪急・能勢電鉄」の日本語サイン、駅舎に設置された時計、画像左端の既存の支柱、背景中央の高層マンション群、中央奥に見える商業施設および既存建築物、画像右奥に見える既存建物群、空、ならびに白いマスク領域の外側に残っている既存の駅・デッキ関連構造物である。これらの位置・形状・外観を変更しないこと。英語プロンプトには必ず次を含めること: keep the railway station building on the left, its existing Japanese signage, the clock, the existing vertical column at the far left, the high-rise apartment towers, the commercial building and existing structures visible in the center background, the existing buildings visible in the far-right background, the sky, and all existing station and deck structures outside the white mask area in the same position and appearance as the original; do not invent or add any other station name, facility name, English lettering, logo or advertising text anywhere in the image。新たに追加する建造物や樹木は、白い範囲の上端を自然に越えて背景の手前に重なってよい。ただし駅舎のサイン文字と時計、高層マンションの上層階、空は隠さないこと。生成物の上端を水平に切り落とすことは絶対に禁止し、屋根や樹冠は必ず全体を描くこと。英語表現: newly added structures and trees may extend upward and naturally overlap in front of the background; never cover the station signage, the clock, the upper floors of the apartment towers or the sky; never cut off the top of any structure or tree crown with a horizontal edge。カメラ位置・視点高さ・遠近・画角は元画像と完全に一致させること。英語表現: maintain the original camera position, viewpoint height, perspective and framing exactly; do not zoom, tilt or pan。手前の床面はペデストリアンデッキと駅前広場の舗装を基調とし、既存の床の高さをそのまま平坦に保つこと。デッキを地上レベルの道路に描き替えたり、地面を掘り下げた沈床広場・段状のコンクリート構造・擁壁を新たに作らないことを守ること。床は完全に乾いた状態で描き、水たまり・濡れた反射・黒ずんだ湿り・泥汚れを描かないこと。英語表現: keep the foreground as a flat paved deck and plaza at the same level as the original; do not turn the elevated deck into a ground-level street and do not excavate or create sunken plazas, stepped concrete structures or retaining walls; the floor must look completely dry and clean with no puddles, standing water, wet reflections or stains',
+    edgeTreatmentRule: '新たに追加する建造物の外周が、周囲のペデストリアンデッキの床面・既存の舗装と自然に馴染むようにし、不要な柵・フェンス・縁取り・白い境界線は追加しない指示を含める',
+    maskMode: 'white',
+    aspectRatio: '16:9',
+    compositeCutRatio: 0.30,
+    compositeEnabled: false,
+  },
 }
 
 const CURRENT_IMAGE_SET  = IMAGE_SETS[IMAGE_SET_ID] ?? IMAGE_SETS[1]
@@ -83,9 +95,9 @@ const MASK_IMAGE_URL     = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.mask}`
 
 // URLクエリ ?set=N のバリデーションヘルパー
 // 1〜4 以外の値・未指定の場合は config の IMAGE_SET_ID を返す
-const resolveImageSetId = (raw: string | undefined): 1 | 2 | 3 | 4 => {
+const resolveImageSetId = (raw: string | undefined): 1 | 2 | 3 | 4 | 5 => {
   const n = Number(raw)
-  if (n === 1 || n === 2 || n === 3 || n === 4) return n
+  if (n === 1 || n === 2 || n === 3 || n === 4 || n === 5) return n
   return IMAGE_SET_ID
 }
 
