@@ -25,7 +25,8 @@ let compositeObjectUrl = null; // 合成済み画像の objectURL（ダウンロ
 const COMPOSITE_CUT_RATIO =
   (window.__IMAGE_SET__ && window.__IMAGE_SET__.compositeCutRatio) || 0.30;
 const COMPOSITE_FEATHER_PX = 60;   // グラデーション幅（px）：境界を目立たなくするブレンド幅
-const COMPOSITE_ENABLED    = true; // false にすると合成をスキップして生成画像をそのまま表示（デバッグ用）
+const COMPOSITE_ENABLED    =
+  !(window.__IMAGE_SET__ && window.__IMAGE_SET__.compositeEnabled === false); // セット単位で合成を無効化（compositeEnabled:false のセットのみスキップ）
 
 /* ================================================
    shouldSkipComposite(text)

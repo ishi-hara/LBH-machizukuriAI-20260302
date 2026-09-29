@@ -28,6 +28,7 @@ const IMAGE_SETS: Record<number, {
   aspectRatio: string            // fal.ai に渡す縦横比
   compositeCutRatio: number      // 合成の区切り位置（生成画像高さ比）
   compositeFeatherRatio?: number // 任意。境界ぼかし幅を生成画像高さ比で指定。未指定なら従来の絶対値60pxを使用
+  compositeEnabled?: boolean     // 任意。false で Canvas 合成を無効化。未指定は true 扱い
 }> = {
   1: {
     original: '001-motogazou-station01.jpg',
@@ -507,7 +508,8 @@ app.get('/', (c) => {
       compositeCutRatio: ${CURRENT_IMAGE_SET.compositeCutRatio},
       compositeFeatherRatio: ${CURRENT_IMAGE_SET.compositeFeatherRatio ?? 'null'},
       maskMode: '${CURRENT_IMAGE_SET.maskMode}',
-      maskAreaLabel: '${CURRENT_IMAGE_SET.maskAreaLabel}'
+      maskAreaLabel: '${CURRENT_IMAGE_SET.maskAreaLabel}',
+      compositeEnabled: ${CURRENT_IMAGE_SET.compositeEnabled !== false}
     };
   </script>
   <script src="/static/app.js"></script>
