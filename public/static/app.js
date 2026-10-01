@@ -423,7 +423,7 @@ async function refinePrompt(draftPrompt) {
 async function generateImage() {
   // ---- オフライン確認 ----
   if (!navigator.onLine) {
-    addMessage('📡 インターネット接続を確認してください。接続が回復してから「もう一度やり直す」を押してください。', false);
+    addMessageWithRetry('📡 インターネット接続を確認してください。接続が回復してから「もう一度やり直す」を押してください。');
     return;
   }
 
