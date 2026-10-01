@@ -421,6 +421,7 @@ async function refinePrompt(draftPrompt) {
    プロンプト最適化 → fal.ai への投入・ポーリング・結果取得
 ================================================ */
 async function generateImage() {
+  if (isGenerating) return;
   // ---- オフライン確認 ----
   if (!navigator.onLine) {
     addMessageWithRetry('📡 インターネット接続を確認してください。接続が回復してから「もう一度やり直す」を押してください。');
@@ -790,12 +791,26 @@ function addMessageWithRetry(errorText) {
   // エラー文言（XSSエスケープ） + 改行 + やり直しボタン
   bubble.innerHTML =
     escapeHtml(errorText).replace(/\n/g, '<br>') +
-    '<br><button class="chat-retry-btn" onclick="resetChat()">↩ もう一度やり直す</button>';
+    '<br><button class="chat-retry-btn" onclick="retryGenerate()">🔄 同じ回答で生成する</button>' +
+    '<button class="chat-retry-btn" onclick="resetChat()">↩ もう一度やり直す</button>';
 
   messageDiv.appendChild(avatar);
   messageDiv.appendChild(bubble);
   chatMessages.appendChild(messageDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+/* ================================================
+   retryGenerate()
+   同じ回答のまま画像生成をやり直す。
+   既存のエラーバブル内のボタンを無効化してから実行する
+================================================ */
+function retryGenerate() {
+  if (isGenerating) return;
+  document.querySelectorAll('.chat-retry-btn').forEach((btn) => {
+    btn.disabled = true;
+  });
+  generateImage();
 }
 
 /* ================================================

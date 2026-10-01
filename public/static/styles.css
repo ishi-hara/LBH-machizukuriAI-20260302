@@ -549,7 +549,8 @@ input {
 ---------------------------------------- */
 .chat-retry-btn {
   display: inline-block;
-  margin-top: var(--spacing-sm);
+  margin-top: 8px;
+  margin-right: 8px;
   padding: 10px 14px;
   min-height: 44px; /* Apple HIG タップターゲット最小サイズ */
   background-color: var(--color-reset);
@@ -566,6 +567,11 @@ input {
 
 .chat-retry-btn:active {
   filter: brightness(0.88);
+}
+
+.chat-retry-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* ----------------------------------------
