@@ -84,6 +84,7 @@ const IMAGE_SET_ID = 4
 | 2 | 駅前ロータリー | 002-motogazou-station01.jpg | 002-white01.png | `white` |
 | 3 | 尼崎・ゼロカーボンベースボールパーク隣接公園 | 003-motogazou-amagasaki.jpg | 003-motogazou-amagasaki.jpg | `none` |
 | 4 | キセラ川西せせらぎ公園 | 004-motogazou-kisera-1700x956.jpg | 004-motogazou-kisera-1700x956.jpg | `none` |
+| 6 | 池田市・ショッピングシティ サカエマチ2番街（アーケード入口） | 006-motogazou-ikedasakaemachi2.jpg（775×620、5:4） | 006-motogazou-ikedasakaemachi2.jpg | `none` |
 
 - 存在しない値を設定した場合はセット1にフォールバックする
 - 変更後は `npm run build` でリビルドし、デプロイすること
@@ -100,9 +101,9 @@ const IMAGE_SET_ID = 4
 | `maskAreaDetail` | string | 生成対象範囲の位置・形状、保持すべき背景要素、禁止事項。systemPrompt に展開される |
 | `edgeTreatmentRule` | string | エッジ処理ルール。柵の有無など。systemPrompt ルール6に展開される |
 | `maskMode` | `'none' \| 'white'` | 白塗り画像を送るか、元画像をそのまま送るか |
-| `aspectRatio` | string | fal.ai に渡す縦横比。セット1〜3は `'4:3'`、セット4は `'16:9'` |
-| `compositeCutRatio` | number | Canvas合成の区切り位置（生成画像高さ比）。セット1〜3は `0.30`、セット4は `0.35` |
-| `compositeFeatherRatio` | number（任意） | 境界ぼかし幅を生成画像高さ比で指定。未指定なら絶対値 60px を使用。セット4は `0.05` |
+| `aspectRatio` | string | fal.ai に渡す縦横比。セット1〜3は `'4:3'`、セット4は `'16:9'`、セット6は `'5:4'` |
+| `compositeCutRatio` | number | Canvas合成の区切り位置（生成画像高さ比）。セット1〜3は `0.30`、セット4は `0.35`、セット6は `0.40` |
+| `compositeFeatherRatio` | number（任意） | 境界ぼかし幅を生成画像高さ比で指定。未指定なら絶対値 60px を使用。セット4は `0.05`、セット6は `0.04` |
 
 ### maskMode による挙動の違い
 
