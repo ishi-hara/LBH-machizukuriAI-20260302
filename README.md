@@ -105,6 +105,10 @@ Q2〜Q6 の回答がこれらを含む場合、その行は日本語ドラフト
 | `aspectRatio` | string | fal.ai に渡す縦横比。セット1〜3は `'4:3'`、セット4・5は `'16:9'`、セット6は `'5:4'` |
 | `compositeCutRatio` | number | Canvas合成の区切り位置（生成画像高さ比）。セット1〜3・5は `0.30`、セット4は `0.35`、セット6は `0.46` |
 | `compositeFeatherRatio` | number（任意） | 境界ぼかし幅を生成画像高さ比で指定。未指定なら絶対値 60px を使用。セット4は `0.05`、セット6は `0.04` |
+| `compositeIgnoreSkip` | string[]（任意） | `shouldSkipComposite` の判定語のうち、そのセットでスキップ判定から除外する語。セット6は アーケード・ドーム・大屋根・天蓋・屋根で覆・屋根が覆・ガラスの屋根・提灯・ちょうちん。未指定は除外なし |
+| `compositeTimeOfDaySkip` | string[]（任意） | 「季節・時間帯:」の行に限ってスキップ判定に加える語。セット6は 朝・早朝・朝方・雨・曇り・雪。他の行（例:「朝市」「雨宿り」）では判定しない |
+| `systemPromptRuleOverrides` | object（任意） | systemPrompt のルール 3 / 8 / 9 / 10 / 14 のセット別本文。未指定のルールは全セット共通の文言。セット6のみ指定（空・光を時間帯に合わせて変える、英語260語以内、時間帯・空・光を英語プロンプトの前半に置く、矛盾する表現は日本語で禁止） |
+| `timeOfDayNote` | string（任意） | `buildPrompt()` が「季節・時間帯:」行の直後に追加する1行。セット6のみ。日本語ドラフトに入るため、判定語（夜・夕方・雨・星 等）を含めないこと |
 
 ### maskMode による挙動の違い
 
@@ -190,6 +194,7 @@ y >= fadeEnd              → 生成画像 100%
 4. `compositeCutRatio` は、保持したい背景の下端と生成物の上端の間に来るよう設定する。まず低層の施設で生成し、切り落としが起きたら値を下げる
 5. 動作確認は `?set=新しいID` で行う。既定にする場合は `config/image-set.json` の `IMAGE_SET_ID` を変更し、`npm run build` してデプロイする
 6. `maskAreaLabel` は `buildPrompt()` の日本語ドラフトに入り、`shouldSkipComposite` の判定対象になる。`app.js` の `NIGHTTIME_KEYWORDS` / `SKIP_KEYWORDS_EXTRA` の語（アーケード・提灯・夜・ドーム・大屋根 など）を含めないこと。`sceneDescription` / `maskAreaDetail` / `edgeTreatmentRule` は systemPrompt 側に入り判定対象外
+7. 空・光を時間帯に合わせて変えたいセットは、`systemPromptRuleOverrides`（ルール3/8/9/10/14）と `timeOfDayNote` を指定し、`maskAreaDetail` に「空は元画像のまま」と書かないこと（指定がない場合に限り元画像の昼間の空と光を維持する、という書き方にする）。看板などの色は「元の色を保ち、光による色味の変化のみ許可」と書く
 
 ## 既知の課題
 - `app.js` の `buildPrompt()` に「建物、道路、通路、高架構造物、その他すべての建築要素は元の画像のまま保持する」という固定文があり、セット4の「新設する構造物は病院建物の手前に重なってよい」という指示と論理的に競合する。現状は GPT-4.1-mini が解決しているが、生成物が不自然に小さくなる・奥に配置される事象が出た場合はここが原因候補

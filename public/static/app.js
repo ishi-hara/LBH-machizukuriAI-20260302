@@ -398,7 +398,11 @@ function buildPrompt(answers) {
     extras.push(`周囲の環境: ${answers.surroundings}`);
   }
   if (!shouldSkip(answers.timeOfDay)) {
-    extras.push(`季節・時間帯: ${answers.timeOfDay}`);
+    extras.push(`${TIME_OF_DAY_LINE_PREFIX} ${answers.timeOfDay}`);
+    // セット固有の補足（セット6のみ定義。未定義のセット1〜5は何も追加しない）
+    // ※この行は「季節・時間帯:」で始めない（時間帯行限定のスキップ判定の対象にしないため）
+    const todNote = window.__IMAGE_SET__ && window.__IMAGE_SET__.timeOfDayNote;
+    if (todNote) extras.push(todNote);
   }
   if (!shouldSkip(answers.additionalNotes)) {
     extras.push(`追加要素: ${answers.additionalNotes}`);
