@@ -15,7 +15,24 @@ const FAL_QUEUE_BASE  = 'https://queue.fal.run/fal-ai/nano-banana-pro/requests'
 // 切替は config/image-set.json の IMAGE_SET_ID を編集して npm run build で反映
 const IMAGE_SET_ID = imageSetConfig.IMAGE_SET_ID as 1 | 2 | 3 | 4 | 5 | 6
 
-const IMAGE_BASE_URL = 'https://machizukuri-ai.pages.dev/static/images'
+// ===== 画像URLの基点 =====
+// fal.ai が画像を取得できるよう、アクセス元が本番ドメイン配下（プレビュー含む）ならその origin を使う。
+// それ以外（localhost・Genspark サンドボックスのプレビュー等）は本番URLを使う。
+const PROD_ORIGIN = 'https://machizukuri-ai.pages.dev'
+const PROD_HOST   = 'machizukuri-ai.pages.dev'
+const IMAGE_PATH  = '/static/images'
+
+const resolveImageBaseUrl = (requestUrl: string): string => {
+  try {
+    const u = new URL(requestUrl)
+    // ホスト名は完全一致 or 「.machizukuri-ai.pages.dev」で終わる場合のみ許可（偽装ホスト対策）
+    const hostOk = u.hostname === PROD_HOST || u.hostname.endsWith('.' + PROD_HOST)
+    if (u.protocol === 'https:' && hostOk) return `${u.origin}${IMAGE_PATH}`
+  } catch {
+    // URL が不正な場合は本番URLにフォールバック
+  }
+  return `${PROD_ORIGIN}${IMAGE_PATH}`
+}
 
 const IMAGE_SETS: Record<number, {
   original: string
@@ -105,8 +122,8 @@ const IMAGE_SETS: Record<number, {
 }
 
 const CURRENT_IMAGE_SET  = IMAGE_SETS[IMAGE_SET_ID] ?? IMAGE_SETS[1]
-const ORIGINAL_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.original}`
-const MASK_IMAGE_URL     = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.mask}`
+const ORIGINAL_IMAGE_URL = `${PROD_ORIGIN}${IMAGE_PATH}/${CURRENT_IMAGE_SET.original}`
+const MASK_IMAGE_URL     = `${PROD_ORIGIN}${IMAGE_PATH}/${CURRENT_IMAGE_SET.mask}`
 
 // URLクエリ ?set=N のバリデーションヘルパー
 // 1〜6 以外の値・未指定の場合は config の IMAGE_SET_ID を返す
@@ -236,7 +253,7 @@ app.post('/api/generate-submit', async (c) => {
     }
     setId = resolveImageSetId(body.setId !== undefined ? String(body.setId) : c.req.query('set'))
     CURRENT_IMAGE_SET = IMAGE_SETS[setId]
-    MASK_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.mask}`
+    MASK_IMAGE_URL = `${resolveImageBaseUrl(c.req.url)}/${CURRENT_IMAGE_SET.mask}`
   } catch {
     return c.json({ success: false, error: '必要なパラメータが不足しています' }, 400)
   }
@@ -401,7 +418,7 @@ app.get('/manifest.json', (c) => {
 app.get('/', (c) => {
   const setId = resolveImageSetId(c.req.query('set'))
   const CURRENT_IMAGE_SET  = IMAGE_SETS[setId]
-  const ORIGINAL_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.original}`
+  const ORIGINAL_IMAGE_URL = `${resolveImageBaseUrl(c.req.url)}/${CURRENT_IMAGE_SET.original}`
   return c.html(/* html */`<!DOCTYPE html>
 <html lang="ja">
 <head>
