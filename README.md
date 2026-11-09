@@ -71,11 +71,11 @@ Q1 は初期メッセージとして表示済みのため、`sendMessage()` の�
 Q2〜Q6 の回答がこれらを含む場合、その行は日本語ドラフトから省略される。
 
 ## 画像セットの切り替え
-元画像・マスク画像・プロンプト文言・合成パラメータはセット単位で管理され、`src/index.tsx` 冒頭の `IMAGE_SET_ID` を変更するだけで切り替わる。
+元画像・マスク画像・プロンプト文言・合成パラメータはセット単位で管理される。既定のセットは `config/image-set.json` の `IMAGE_SET_ID` で決まり、URLクエリ `?set=N`（N=1〜6）で URL ごとに切り替えることもできる。
 
 ```typescript
-// 1 / 2 / 3 / 4 のいずれかを設定する
-const IMAGE_SET_ID = 4
+// config/image-set.json（1〜6 のいずれかを設定。変更後は npm run build）
+{ "IMAGE_SET_ID": 4 }
 ```
 
 | ID | 対象地 | 元画像ファイル | fal.ai に渡す画像 | maskMode |
@@ -84,6 +84,7 @@ const IMAGE_SET_ID = 4
 | 2 | 駅前ロータリー | 002-motogazou-station01.jpg | 002-white01.png | `white` |
 | 3 | 尼崎・ゼロカーボンベースボールパーク隣接公園 | 003-motogazou-amagasaki.jpg | 003-motogazou-amagasaki.jpg | `none` |
 | 4 | キセラ川西せせらぎ公園 | 004-motogazou-kisera-1700x956.jpg | 004-motogazou-kisera-1700x956.jpg | `none` |
+| 5 | 川西能勢口駅南口（ペデストリアンデッキ） | 005-motogazou-noseguchiminamiguchi.jpg | 005-mask-noseguchiminamiguchi-2.png | `white`（`compositeEnabled: false`） |
 | 6 | 池田市・ショッピングシティ サカエマチ2番街（アーケード入口） | 006-motogazou-ikedasakaemachi2.jpg（775×620、5:4） | 006-motogazou-ikedasakaemachi2.jpg | `none` |
 
 - 存在しない値を設定した場合はセット1にフォールバックする
@@ -101,16 +102,16 @@ const IMAGE_SET_ID = 4
 | `maskAreaDetail` | string | 生成対象範囲の位置・形状、保持すべき背景要素、禁止事項。systemPrompt に展開される |
 | `edgeTreatmentRule` | string | エッジ処理ルール。柵の有無など。systemPrompt ルール6に展開される |
 | `maskMode` | `'none' \| 'white'` | 白塗り画像を送るか、元画像をそのまま送るか |
-| `aspectRatio` | string | fal.ai に渡す縦横比。セット1〜3は `'4:3'`、セット4は `'16:9'`、セット6は `'5:4'` |
-| `compositeCutRatio` | number | Canvas合成の区切り位置（生成画像高さ比）。セット1〜3は `0.30`、セット4は `0.35`、セット6は `0.40` |
+| `aspectRatio` | string | fal.ai に渡す縦横比。セット1〜3は `'4:3'`、セット4・5は `'16:9'`、セット6は `'5:4'` |
+| `compositeCutRatio` | number | Canvas合成の区切り位置（生成画像高さ比）。セット1〜3・5は `0.30`、セット4は `0.35`、セット6は `0.46` |
 | `compositeFeatherRatio` | number（任意） | 境界ぼかし幅を生成画像高さ比で指定。未指定なら絶対値 60px を使用。セット4は `0.05`、セット6は `0.04` |
 
 ### maskMode による挙動の違い
 
-**`'white'`（セット1・2）**  
+**`'white'`（セット1・2・5）**  
 白く塗りつぶしたマスク画像を fal.ai に送り、白い範囲を生成対象として扱う。`buildPrompt()` の冒頭は「マスクした白のエリアを〜」となり、systemPrompt にも「白い範囲が変更対象です」という説明が入る。
 
-**`'none'`（セット3・4）**  
+**`'none'`（セット3・4・6）**  
 加工していない元画像をそのまま送る。`fal-ai/nano-banana-pro/edit` は `mask_url` を受け付けず画像全体を描き直すため、白塗りは「白い物体」として解釈されるおそれがある。そのため領域指定は白塗りではなく次の2層で行う。
 
 1. **プロンプトによる領域指定** — `maskAreaDetail` に保持すべき背景要素を列挙し、生成対象を自然言語で指定する。`white` / `mask` といった語の使用を明示的に禁止する
@@ -187,7 +188,8 @@ y >= fadeEnd              → 生成画像 100%
 2. `IMAGE_SETS` に新しいIDのエントリを追加する。`maskMode: 'none'` の場合は `original` と `mask` に同じファイル名を設定する
 3. `maskAreaDetail` に、生成対象範囲・保持すべき背景要素・禁止事項を日本語と英語の両方で記述する
 4. `compositeCutRatio` は、保持したい背景の下端と生成物の上端の間に来るよう設定する。まず低層の施設で生成し、切り落としが起きたら値を下げる
-5. `IMAGE_SET_ID` を新しいIDに変更し、`npm run build` してデプロイする
+5. 動作確認は `?set=新しいID` で行う。既定にする場合は `config/image-set.json` の `IMAGE_SET_ID` を変更し、`npm run build` してデプロイする
+6. `maskAreaLabel` は `buildPrompt()` の日本語ドラフトに入り、`shouldSkipComposite` の判定対象になる。`app.js` の `NIGHTTIME_KEYWORDS` / `SKIP_KEYWORDS_EXTRA` の語（アーケード・提灯・夜・ドーム・大屋根 など）を含めないこと。`sceneDescription` / `maskAreaDetail` / `edgeTreatmentRule` は systemPrompt 側に入り判定対象外
 
 ## 既知の課題
 - `app.js` の `buildPrompt()` に「建物、道路、通路、高架構造物、その他すべての建築要素は元の画像のまま保持する」という固定文があり、セット4の「新設する構造物は病院建物の手前に重なってよい」という指示と論理的に競合する。現状は GPT-4.1-mini が解決しているが、生成物が不自然に小さくなる・奥に配置される事象が出た場合はここが原因候補

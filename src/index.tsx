@@ -21,8 +21,8 @@ const IMAGE_SETS: Record<number, {
   original: string
   mask: string
   sceneDescription: string  // 元画像の場所説明
-  maskAreaLabel: string     // 白く塗った範囲の呼び名
-  maskAreaDetail: string    // マスク範囲の位置・形状の補足
+  maskAreaLabel: string     // 白く塗った範囲の呼び名。※buildPrompt の日本語ドラフトに入る＝shouldSkipComposite の判定対象。app.js の NIGHTTIME_KEYWORDS / SKIP_KEYWORDS_EXTRA の語（アーケード・提灯・夜・ドーム・大屋根 等）を含めないこと
+  maskAreaDetail: string    // マスク範囲の位置・形状の補足（systemPrompt 側に入り判定対象外。ドラフトには入れない）
   edgeTreatmentRule: string // エッジ処理ルール（柵の有無など）
   maskMode: 'none' | 'white'     // 'white' = 白塗り画像を送る / 'none' = 元画像を送る
   aspectRatio: string            // fal.ai に渡す縦横比
@@ -87,16 +87,19 @@ const IMAGE_SETS: Record<number, {
     compositeCutRatio: 0.30,
     compositeEnabled: false,
   },
+  // 【注意】セット6の maskAreaLabel だけが buildPrompt の日本語ドラフト（= shouldSkipComposite の判定対象）に入る。
+  //   maskAreaLabel には NIGHTTIME_KEYWORDS / SKIP_KEYWORDS_EXTRA の判定語（アーケード・提灯・夜・ドーム・大屋根 など）を含めないこと。
+  //   sceneDescription / maskAreaDetail / edgeTreatmentRule は systemPrompt 側に入り判定対象外のため、「アーケード」「提灯」を含んでよい。
   6: {
     original: '006-motogazou-ikedasakaemachi2.jpg',
     mask: '006-motogazou-ikedasakaemachi2.jpg',
     sceneDescription: '池田市の商店街「ショッピングシティ サカエマチ2番街」のアーケード入口（シャッターが閉まった店舗が並ぶ通路）',
-    maskAreaLabel: 'アーケード通路のエリア',
-    maskAreaDetail: '変更対象は、アーケード入口の緑の看板より下に見える範囲、すなわち画像下部およそ6割に広がるアーケード通路・両側のシャッター店舗の店先・床面です。目的は、シャッターが閉まった商店街を、木の店先・緑・広場のある新しい商店街のイメージに変えることです。英語プロンプトでこのエリアを指す場合は必ず "the covered shopping arcade street and its shopfronts below the green entrance sign" と呼ぶこと。塗りつぶしや領域指定を意味する語は一切使わないこと。最優先で保持するのは、アーケード入口の大きな緑の看板（上段「ショッピングシティ」、中段「サカエマチ2番街」の日本語表記）と、看板の左上・右上に取り付けられた2つの照明です。これらは元画像と同じ位置・同じ大きさ・同じ形・同じ色・同じ文字のまま残し、植物・つる・布・のぼり・日よけ・提灯などで隠したり、重ねたり、描き直したりしないこと。英語プロンプトには必ず次を含めること: keep the large green entrance sign reading the Japanese text on its face and the two floodlights mounted at its upper left and right in exactly the same position, size, shape, color and lettering as the original; do not cover, hide, alter, redraw or overlap them with plants, vines, fabric, banners, awnings or lanterns; do not invent or add any other shop name, English lettering, logo or advertising text anywhere in the image。木・植栽・提灯・日よけなど新しく加える要素は、すべて看板の下端より下の高さに収め、看板の表面と2つの照明の前には絶対に置かないこと。英語表現: place all newly added trees, planting, lanterns and awnings strictly below the lower edge of the green sign; never in front of the sign face or the two floodlights。アーケードの透明な天井の骨組み・両側の支柱と照明・奥へ向かう遠近・空は元画像のまま保つこと。カメラ位置・視点高さ・遠近・画角は元画像と完全に一致させること。英語表現: maintain the original camera position, viewpoint height, perspective and framing exactly; do not zoom, tilt or pan; keep the arcade roof structure, the green support columns and the receding perspective as in the original。閉まったシャッターの店先は、木の質感の店構え・木製のベンチやテーブル・鉢植えや低木などの緑に置き換え、通路の途中にはゆったりした広場のような滞留空間をつくってよい。手前の床は既存のタイル舗装を基調とし、遠近方向の目地を元画像と揃えること。地面を掘り下げた段差や新たな構造物は作らないこと。人物は小さく少数にとどめ、看板付近には配置しないこと。',
+    maskAreaLabel: '商店街の通路と店先のエリア',
+    maskAreaDetail: '変更対象は、アーケード入口の緑の看板より下に見える範囲、すなわち画像下部およそ6割に広がる商店街の通路・両側のシャッター店舗の店先・床面です。目的は、シャッターが閉まった商店街を、ユーザーの回答に沿った新しい商店街のイメージに変えることです。英語プロンプトでこのエリアを指す場合は必ず "the covered shopping arcade street and its shopfronts below the green entrance sign" と呼ぶこと。塗りつぶしや領域指定を意味する語は一切使わないこと。最優先で保持するのは、アーケード入口の大きな緑の看板（上段「ショッピングシティ」、中段「サカエマチ2番街」の日本語表記）と、看板の左上・右上に取り付けられた2つの照明です。これらは元画像と同じ位置・同じ大きさ・同じ形・同じ色・同じ文字のまま残し、植物・つる・布・のぼり・日よけ・提灯などで隠したり、重ねたり、描き直したりしないこと。英語プロンプトには必ず次を含めること: keep the large green entrance sign reading the Japanese text on its face and the two floodlights mounted at its upper left and right in exactly the same position, size, shape, color and lettering as the original; do not cover, hide, alter, redraw or overlap them with plants, vines, fabric, banners, awnings or lanterns; do not invent or add any other shop name, English lettering, logo or advertising text anywhere in the image。樹木・植栽・提灯・日よけなど新しく加える要素は、すべて看板の下端より下の高さに収め、看板の表面と2つの照明の前には絶対に置かないこと。英語表現: place all newly added trees, planting, lanterns and awnings strictly below the lower edge of the green sign; never in front of the sign face or the two floodlights。アーケードの透明な天井の骨組み・両側の支柱と照明・奥へ向かう遠近・空は元画像のまま保つこと。カメラ位置・視点高さ・遠近・画角は元画像と完全に一致させること。英語表現: maintain the original camera position, viewpoint height, perspective and framing exactly; do not zoom, tilt or pan; keep the arcade roof structure, the green support columns and the receding perspective as in the original。閉まったシャッターの店先は、店構えのスタイル・素材・色をユーザーの回答（スタイルの質問など）に従って作り替えること。回答に指定がない場合は特定の素材に固定せず、既存のアーケードと自然に調和するデザインにすること。ベンチやテーブル、鉢植えや低木などの緑も回答に応じて配置してよく、通路の途中にはゆったりした広場のような滞留空間をつくってよい。手前の床は既存のタイル舗装を基調とし、遠近方向の目地を元画像と揃えること。地面を掘り下げた段差や大規模な建物は作らないこと。ただしベンチ・花壇・植栽・遊具・屋台・テーブルなど通路内の小さな設置物は、ユーザーの回答に応じて配置してよい。人物の数・年齢層・様子はユーザーの回答（利用シーン）に合わせること（例：「家族連れでにぎわう」なら多くの家族連れを描く）。ただし人物は看板付近（看板の下端より上、看板と2つの照明の前）には配置しないこと。',
     edgeTreatmentRule: '新たに追加する要素の外周が、周囲の舗装・既存のアーケード構造・店舗の壁面と自然に馴染むようにし、緑の看板と2つの照明のまわりに枠・縁取り・装飾・植物を追加しない指示を含める',
     maskMode: 'none',
     aspectRatio: '5:4',
-    compositeCutRatio: 0.40,
+    compositeCutRatio: 0.46,   // 看板下端(y=258/620)の10px以上下(y>=268)まで元画像100%にするため。fadeStart換算で14.0〜14.9px下（根拠はコミットメッセージ参照）
     compositeFeatherRatio: 0.04,
   },
 }
