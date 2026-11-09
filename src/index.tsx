@@ -46,6 +46,8 @@ const IMAGE_SETS: Record<number, {
   compositeCutRatio: number      // 合成の区切り位置（生成画像高さ比）
   compositeFeatherRatio?: number // 任意。境界ぼかし幅を生成画像高さ比で指定。未指定なら従来の絶対値60pxを使用
   compositeEnabled?: boolean     // 任意。false で Canvas 合成を無効化。未指定は true 扱い
+  compositeIgnoreSkip?: string[]     // 任意。shouldSkipComposite の判定語のうち、このセットではスキップ判定から除外する語（建物・飾りの語など）。未指定は除外なし
+  compositeTimeOfDaySkip?: string[]  // 任意。「季節・時間帯」の行に限ってスキップ判定に加える語（朝・雨・曇り・雪など）。未指定は追加なし
 }> = {
   1: {
     original: '001-motogazou-station01.jpg',
@@ -116,6 +118,8 @@ const IMAGE_SETS: Record<number, {
     edgeTreatmentRule: '新たに追加する要素の外周が、周囲の舗装・既存のアーケード構造・店舗の壁面と自然に馴染むようにし、緑の看板と2つの照明のまわりに枠・縁取り・装飾・植物を追加しない指示を含める',
     maskMode: 'none',
     aspectRatio: '5:4',
+    compositeIgnoreSkip: ['アーケード', 'ドーム', '大屋根', '天蓋', '屋根で覆', '屋根が覆', 'ガラスの屋根', '提灯', 'ちょうちん'],
+    compositeTimeOfDaySkip: ['朝', '早朝', '朝方', '雨', '曇り', '雪'],
     compositeCutRatio: 0.46,   // 看板下端(y=258/620)の10px以上下(y>=268)まで元画像100%にするため。fadeStart換算で14.0〜14.9px下（根拠はコミットメッセージ参照）
     compositeFeatherRatio: 0.04,
   },
@@ -553,7 +557,15 @@ app.get('/', (c) => {
       compositeFeatherRatio: ${CURRENT_IMAGE_SET.compositeFeatherRatio ?? 'null'},
       maskMode: '${CURRENT_IMAGE_SET.maskMode}',
       maskAreaLabel: '${CURRENT_IMAGE_SET.maskAreaLabel}',
-      compositeEnabled: ${CURRENT_IMAGE_SET.compositeEnabled !== false}
+      compositeEnabled: ${CURRENT_IMAGE_SET.compositeEnabled !== false}${
+        CURRENT_IMAGE_SET.compositeIgnoreSkip
+          ? `,\n      compositeIgnoreSkip: ${JSON.stringify(CURRENT_IMAGE_SET.compositeIgnoreSkip).replace(/</g, '\\u003c')}`
+          : ''
+      }${
+        CURRENT_IMAGE_SET.compositeTimeOfDaySkip
+          ? `,\n      compositeTimeOfDaySkip: ${JSON.stringify(CURRENT_IMAGE_SET.compositeTimeOfDaySkip).replace(/</g, '\\u003c')}`
+          : ''
+      }
     };
   </script>
   <script src="/static/app.js"></script>
