@@ -13,22 +13,45 @@ const FAL_QUEUE_BASE  = 'https://queue.fal.run/fal-ai/nano-banana-pro/requests'
 
 // ===== 画像セット切替用グローバル変数 =====
 // 切替は config/image-set.json の IMAGE_SET_ID を編集して npm run build で反映
-const IMAGE_SET_ID = imageSetConfig.IMAGE_SET_ID as 1 | 2 | 3 | 4 | 5
+const IMAGE_SET_ID = imageSetConfig.IMAGE_SET_ID as 1 | 2 | 3 | 4 | 5 | 6
 
-const IMAGE_BASE_URL = 'https://machizukuri-ai.pages.dev/static/images'
+// ===== 画像URLの基点 =====
+// fal.ai が画像を取得できるよう、アクセス元が本番ドメイン配下（プレビュー含む）ならその origin を使う。
+// それ以外（localhost・Genspark サンドボックスのプレビュー等）は本番URLを使う。
+const PROD_ORIGIN = 'https://machizukuri-ai.pages.dev'
+const PROD_HOST   = 'machizukuri-ai.pages.dev'
+const IMAGE_PATH  = '/static/images'
+
+const resolveImageBaseUrl = (requestUrl: string): string => {
+  try {
+    const u = new URL(requestUrl)
+    // ホスト名は完全一致 or 「.machizukuri-ai.pages.dev」で終わる場合のみ許可（偽装ホスト対策）
+    const hostOk = u.hostname === PROD_HOST || u.hostname.endsWith('.' + PROD_HOST)
+    if (u.protocol === 'https:' && hostOk) return `${u.origin}${IMAGE_PATH}`
+  } catch {
+    // URL が不正な場合は本番URLにフォールバック
+  }
+  return `${PROD_ORIGIN}${IMAGE_PATH}`
+}
 
 const IMAGE_SETS: Record<number, {
   original: string
   mask: string
   sceneDescription: string  // 元画像の場所説明
-  maskAreaLabel: string     // 白く塗った範囲の呼び名
-  maskAreaDetail: string    // マスク範囲の位置・形状の補足
+  maskAreaLabel: string     // 白く塗った範囲の呼び名。※buildPrompt の日本語ドラフトに入る＝shouldSkipComposite の判定対象。app.js の NIGHTTIME_KEYWORDS / SKIP_KEYWORDS_EXTRA の語（アーケード・提灯・夜・ドーム・大屋根 等）を含めないこと
+  maskAreaDetail: string    // マスク範囲の位置・形状の補足（systemPrompt 側に入り判定対象外。ドラフトには入れない）
   edgeTreatmentRule: string // エッジ処理ルール（柵の有無など）
   maskMode: 'none' | 'white'     // 'white' = 白塗り画像を送る / 'none' = 元画像を送る
   aspectRatio: string            // fal.ai に渡す縦横比
   compositeCutRatio: number      // 合成の区切り位置（生成画像高さ比）
   compositeFeatherRatio?: number // 任意。境界ぼかし幅を生成画像高さ比で指定。未指定なら従来の絶対値60pxを使用
   compositeEnabled?: boolean     // 任意。false で Canvas 合成を無効化。未指定は true 扱い
+  compositeIgnoreSkip?: string[]     // 任意。shouldSkipComposite の判定語のうち、このセットではスキップ判定から除外する語（建物・飾りの語など）。未指定は除外なし
+  compositeTimeOfDaySkip?: string[]  // 任意。「季節・時間帯」の行に限ってスキップ判定に加える語（朝・雨・曇り・雪など）。未指定は追加なし
+  systemPromptRuleOverrides?: Partial<Record<1 | 2 | 3 | 4 | 8 | 9 | 10 | 12 | 13 | 14, string>>  // 任意。systemPrompt のルール番号ごとの本文（番号と改行は自動付与）。未指定のルールは全セット共通の文言。セット1〜5は未指定
+  promptPrefix?: string              // 任意。/api/refine-prompt の結果の先頭にサーバー側で連結する固定文（英語）。未指定は連結なし（セット1〜5）
+  promptSuffix?: string              // 任意。同じく末尾に連結する固定文（英語）。未指定は連結なし（セット1〜5）
+  timeOfDayNote?: string             // 任意。buildPrompt が「季節・時間帯:」行の直後に1行追加する補足（日本語ドラフトに入る＝shouldSkipComposite の判定語を含めないこと）。未指定は追加なし
 }> = {
   1: {
     original: '001-motogazou-station01.jpg',
@@ -87,17 +110,53 @@ const IMAGE_SETS: Record<number, {
     compositeCutRatio: 0.30,
     compositeEnabled: false,
   },
+  // 【注意】セット6の maskAreaLabel だけが buildPrompt の日本語ドラフト（= shouldSkipComposite の判定対象）に入る。
+  //   maskAreaLabel には NIGHTTIME_KEYWORDS / SKIP_KEYWORDS_EXTRA の判定語（アーケード・提灯・夜・ドーム・大屋根 など）を含めないこと。
+  //   sceneDescription / maskAreaDetail / edgeTreatmentRule は systemPrompt 側に入り判定対象外のため、「アーケード」「提灯」を含んでよい。
+  6: {
+    original: '006-motogazou-ikedasakaemachi2.jpg',
+    mask: '006-motogazou-ikedasakaemachi2.jpg',
+    sceneDescription: '池田市の商店街「ショッピングシティ サカエマチ2番街」のアーケード入口（シャッターが閉まった店舗が並ぶ通路）',
+    maskAreaLabel: '商店街の通路と店先のエリア',
+    maskAreaDetail: '変更対象は、アーケード入口の緑の看板より下に見える範囲、すなわち画像下部およそ6割に広がる商店街の通路・両側のシャッター店舗の店先・床面です。目的は、シャッターが閉まった商店街を、ユーザーの回答に沿った新しい商店街のイメージに変えることです。英語プロンプトでこのエリアを指す場合は必ず "the arcade street and its shopfronts" と呼ぶこと。塗りつぶしや領域指定を意味する語は一切使わないこと。最優先で保持するのは、アーケード入口の大きな緑の看板（上段「ショッピングシティ」、中段「サカエマチ2番街」の日本語表記）と、看板の左上・右上に取り付けられた2つの照明です。これらは元画像と同じ位置・同じ大きさ・同じ形・同じ文字・同じ元の色（緑）のまま残し（時間帯に応じた光による色味の変化、たとえば暖かい色味・やわらかな光のにじみ・夕方の陰影だけは許可する。別の色には塗り替えない）、植物・つる・布・のぼり・日よけ・提灯などで隠したり、重ねたり、描き直したりしないこと。この看板・照明の保持、カメラ位置・画角、屋根・支柱・遠近の保持、店舗に文字を描かないこと、写実の指定、コラージュ・境界線の禁止は、英語プロンプトの先頭と末尾の固定文としてサーバー側が付けるので、英語で書かないこと（繰り返すと語数が増えて重要な指示が薄まる）。樹木・植栽・提灯・日よけなど新しく加える要素は、すべて看板の下端より下の高さに収め、看板の表面と2つの照明の前には絶対に置かないこと。（この配置の指示も固定文に含まれるので英語では書かない）。アーケードの透明な天井の骨組み・両側の支柱と照明・奥へ向かう遠近は元画像のまま保つこと。空と全体の光は、ユーザーが季節・時間帯や天候を指定した場合はその指定に合わせて、アーケード入口の外に見える空の色と明るさ、全体の光の色味と明るさを変えること（雨・曇り・雪は空・光・雰囲気の表現に限り、路面の濡れや積雪は描かない）。時間帯・天候の指定がない場合に限り、元画像の昼間の空と光のままにすること。【構造ロック】時間帯・天候・床材・空の演出などの指定の有無にかかわらず、カメラ位置・視点の高さ・画角・構図は元画像と同一にすること。緑の看板は画像上部で横幅の約9割を占め、下端は画像高さの約4割の位置にあり、この大きさと位置を変えないこと（空を広げるために看板を縮める・下げる・画角を引くことは禁止）。アーケードの透明な屋根・骨組み・両側の緑の支柱はすべて元画像のまま残し、取り除いたり、屋外の広場や草原に変えたり、奥の遠近を変えたりしないこと。樹木は鉢植え・低木、または屋根の下端より低いものに限り、屋根を突き抜ける高さの木は描かないこと。芝生などの床の指定がある場合のみ、英語プロンプトに次の表現を含めること: any grass or turf covers only the floor of the arcade street below the roof。屋根・看板・カメラの保持は固定文に含まれるので英語では書かないこと。【空の要素】空に描く演出（星・月・光の演出など）は、ユーザーの回答に明記されている場合だけ描くこと。回答に空の演出がない場合（「こだわりなし」「特になし」を含む）は、空に何も付け足さず、時間帯による空の色と光の変化だけにすること。回答に空の演出がある場合は、回答の語を英語にしてそのまま使い、アーケードの屋根の外に見える狭い空（看板の上端より上と、看板の左右の外側）だけに小さく描くこと。アーケードの内側や屋根の下には描かない。看板の面・文字・2つの照明の上には、光の筋・にじみ・火花・飾りを含め、何も重ねないこと。空を広げるために看板を縮める・画角を引く・屋根を消すことは禁止。回答に空の演出の語がある場合に限り、その語を主語にして「小さく、看板の上端より上と看板の左右の外側の狭い空にだけ」という意味の短い英語の1文を書くこと。回答に空の演出の語がない場合は、空の演出に関する英語を一切書かないこと。【床の表現】「一面の芝生」「芝生の広場」「草原」などの回答は、屋根の下の通路の床面（看板より下）の範囲で、芝生・人工芝の敷き込み・芝生の帯・植え込みとして表現すること。通路の幅・両側の店舗・遠近は維持する。【文字の禁止】店舗の庇・看板・のぼり・旗・壁・窓・メニュー・家具・食器・照明には、文字・英単語・数字・ロゴ・店名を一切描かないこと。施設の種類やスタイル（レトロ、カフェなど）を文字で示さないこと。店構えは素材・色・形・照明だけで表現し、庇や壁面は無地にすること。【様式と場所名の書き方】施設名の直前に「レトロ」「モダン」「和風」「ヴィンテージ」などの様式の形容詞を付けないこと（「レトロなカフェ」「和風のマルシェ」のように書かない）。スタイルの回答は、木材の質感・色調・ランプの色・形といった見た目の描写だけで表すこと（例: a cafe counter with dark wood paneling and warm amber lamps）。また、「公園」「広場」「庭園」「ガーデン」などの屋外の場所を表す語を場所の名前として英語に書かないこと。それらの回答は、屋根の下の通路に置く設置物（植え込み、芝生のスペース、ベンチ、テーブル席、飾りつけ）として表すこと（例: a small green seating area with planters and benches along the arcade street）。通路を屋外の公園や広場に変えてはならない。カメラ位置・視点高さ・遠近・画角は元画像と完全に一致させること。（固定文に含まれるため英語では書かない）。閉まったシャッターの店先は、店構えのスタイル・素材・色をユーザーの回答（スタイルの質問など）に従って作り替えること。回答に指定がない場合は特定の素材に固定せず、既存のアーケードと自然に調和するデザインにすること。ベンチやテーブル、鉢植えや低木などの緑も回答に応じて配置してよく、屋根の下の通路幅の範囲で、ゆったりした滞留空間をつくってよい。通路の床は既存のタイル舗装を基調とし、遠近方向の目地を元画像と揃えること。ただし芝生などの指定があれば、通路の床の範囲内で置き換えてよい。地面を掘り下げた段差や大規模な建物は作らないこと。ただしベンチ・花壇・植栽・遊具・屋台・テーブルなど通路内の小さな設置物は、ユーザーの回答に応じて配置してよい。人物の数・年齢層・様子はユーザーの回答（利用シーン）に合わせること（例：「家族連れでにぎわう」なら多くの家族連れを描く）。ただし人物は看板付近（看板の下端より上、看板と2つの照明の前）には配置しないこと。',
+    edgeTreatmentRule: '新たに追加する要素の外周が、周囲の舗装・既存のアーケード構造・店舗の壁面と自然に馴染むように短く書く（看板と2つの照明のまわりの扱いは固定文に含まれるため書かない）',
+    maskMode: 'none',
+    aspectRatio: '5:4',
+    compositeIgnoreSkip: ['アーケード', 'ドーム', '大屋根', '天蓋', '屋根で覆', '屋根が覆', 'ガラスの屋根', '提灯', 'ちょうちん'],
+    compositeTimeOfDaySkip: ['朝', '早朝', '朝方', '雨', '曇り', '雪'],
+    compositeCutRatio: 0.46,   // 看板下端(y=258/620)の10px以上下(y>=268)まで元画像100%にするため。fadeStart換算で14.0〜14.9px下（根拠はコミットメッセージ参照）
+    compositeFeatherRatio: 0.04,
+    // 【セット6のみ】空・光・構造ロック用。ルール1/2/3/4/8/9/10/12/13/14 を上書きする（セット1〜5は共通の文言のまま）
+    //   ・英語の禁止語は並べず、日本語で「矛盾する表現を入れない」と指示する（禁止語を見せると逆に引きずられるため）
+    systemPromptRuleOverrides: {
+      1: '英語プロンプトの先頭と末尾の定型句（"photorealistic, real photograph, DSLR photo," や "not anime, not illustration…" など）はサーバー側で付けるので、あなたの出力には書かない。出力は中間部分だけにする',
+      2: 'アニメ風・イラスト風・CG・ポスター風の禁止表現はサーバー側が末尾に付けるので、あなたの出力には書かない',
+      3: 'カメラ位置・視点の高さ・遠近法・構図を元画像と一致させる指示はサーバー側の固定文に含まれるので英語では書かない。光源の方向・時間帯・色調は、ユーザーが季節・時間帯や天候を指定していない場合に限り元画像と同じにする（指定がある場合はルール10に従って空と光を変える）。地面は元画像の地面と連続させ、継ぎ目が見えないようにする',
+      4: 'コラージュ・枠・境界線・貼り付けの禁止表現はサーバー側が末尾に付けるので、あなたの出力には書かない',
+      8: '指定されたエリアのみを変更し、それ以外の領域は元画像のまま維持する（建物・屋根・看板の保持はサーバー側の固定文に含まれるので英語では書かない）。ただしユーザーが時間帯や天候を指定した場合は、空の色・明るさと全体の光の色味・明るさを指定に合わせて変えてよい（建物・アーケード構造・看板の形や位置は変えない）',
+      9: '新たに追加するすべての要素（店先・ベンチ・樹木・植栽・提灯・日よけなどを含む）が、画像の端や境界で不自然に途中で切れないよう指示する。地上に置く要素はすべてアーケードの屋根の下、かつ看板の下端より下に収め、屋根・支柱・看板・2つの照明には重ねない。この配置の指示は末尾の固定文に含まれるので、英語では書かない。樹木は鉢植え・低木、または屋根の下端より低いものに限り、屋根を突き抜ける高さの木は描かない。背景の構造物を保持するとは「描き替えない」という意味であり、手前にベンチや鉢植えが重なることを禁じるものではない',
+      10: '空・光・時間帯の扱い。ユーザーの回答の「季節・時間帯」に時間帯・天候・照明の指定がある場合は、その指定に合わせて、アーケード入口の外に見える空の色と明るさ、画像全体の光の色味と明るさ、雰囲気を変える。夕方・夕暮れ・夕焼けなら、空は橙から紫へ移る夕空、全体の光は低い位置からの暖かい橙色の光にする（例: an orange-to-purple dusk sky and warm low-angle orange light）。夜なら、空は暗い夜空、全体の光は暗めにして、街灯や店先のやわらかな人工光を中心にする（例: a dark night sky and soft warm artificial lights）。朝・早朝なら、淡く澄んだ朝の空と、低い角度からのやわらかな朝の光にする。雨・曇り・雪は、空・光・雰囲気（灰色にくもった空、弱くやわらかな拡散光、屋根の外の空に見える雨や雪）の表現に限り、路面の濡れ・水たまり・積雪・地面の雪は描かない。星・月・光の演出など空の要素は、ユーザーの回答に明記されている場合だけ描く。回答にない場合は空に何も足さない。ある場合は、看板の上端より上と看板の左右の外側に見える狭い空にだけ小さく描き、看板の面・文字・2つの照明の上には何も重ねない。空を広げるために看板を縮める・下げる、画角を引く、屋根を消すことは禁止。昼間（春の昼間など）の指定は、明るい昼間の空と光として表現する。時間帯・天候の指定がない場合に限り、元画像と同じ昼間の空と光を維持する。時間帯・天候を指定された場合は、その指定と矛盾する表現、すなわち昼間・晴天・青空を意味する語、および空や光について「元画像と同じ」「元画像のまま」と述べる表現を、英語プロンプトに一切入れないこと。なお、アーケード構造・看板・床の形や位置を「元画像と同じ」と述べるのは問題ない',
+      12: '具体的で視覚的に明確な英語表現を使う。店構えは素材・色・形・照明で描写し、看板・店名・文字・ロゴを意味する語で描写しない。施設名（カフェ・マルシェ・店・屋台など）の直前に、「レトロ」「モダン」「和風」「ヴィンテージ」「アンティーク」などの様式を表す形容詞や複合語を付けない（「レトロなカフェ」「和風のマルシェ」のような名詞句にしない）。様式は、木目・濃い色の板張り・淡い色調・琥珀色のランプ・曲線的な形など、素材・色・形・照明の描写だけで表す（例: a cafe counter with dark wood paneling and warm amber lamps）。「公園」「広場」「庭園」「ガーデン」「テラス」など屋外の場所を表す語を、場所の名前として英語に書かない。回答にそれらの語があっても、屋根の下の通路に置く設置物（植え込み、芝生のスペース、ベンチ、テーブル席、飾りつけなど）として書く（例: a small green seating area with planters and benches along the arcade street）',
+      13: '括弧内の日本語補足は付けず、英語の語句だけで書く。日本語の店名・看板文字・日本語表記を英語プロンプトに入れない',
+      14: '1つのパラグラフにまとめ、英語プロンプトの中間部分だけを出力する（先頭の定型句、カメラ・看板・屋根・遠近の保持、店舗に文字を描かないこと、末尾の定型句はサーバーが付ける。ルール7・11が求める保持の指示もこれに含まれるので書かない）。固定文と重複する内容は書かず、66語以内にする（厳守。短い句をカンマで並べる）。書く順序は、(1)時間帯・空・光の描写（指定がある場合）、(2)施設・スタイル・床の素材・人物、(3)ユーザーの回答に明記された空の演出（回答にある場合のみ。ない場合は何も書かず、空の演出を指す英語の語も一切書かない）の順にする。語数が超過する場合は優先度の低い装飾的な描写を削り、時間帯・空・光の描写は削らない',
+    },
+    // 【案C2】英語プロンプトの先頭・末尾にサーバー側で連結する固定文（構造ロック・文字なし・写実）。LLMには中間部分だけを書かせる
+    promptPrefix: 'photorealistic, real photograph, DSLR photo, taken from exactly the same camera position, viewpoint height, lens and framing as the original photograph. The huge green entrance sign with its Japanese lettering spans about 90% of the frame width in the upper part of the image, its lower edge at about 40% of the image height, with the two floodlights at its upper left and right, all unchanged in position, size, shape, base color and lettering; only the lighting on them may follow the time of day. Below it, the translucent arched arcade roof with its ribs and the green support columns stay fully intact and recede to the vanishing point at the center of the image.',
+    promptSuffix: 'All ground-level additions stay under the arcade roof and below the lower edge of the sign, never touching the roof, the sign or the floodlights. The face of the green sign and its lettering stay completely clear: nothing is ever overlaid on them, no light streaks, glow, sparks, ornaments or effects. Shopfront fascias, awnings, banners, windows and walls are plain and unmarked; the Japanese text on the green sign is the only writing in the scene. No collage, no visible border. photorealistic real photograph, not anime, not illustration, not CG.',
+    // 「季節・時間帯:」行の直後に付く補足。日本語ドラフトに入るため、shouldSkipComposite の判定語（夜・夕方・雨・星 等）は含めない
+    timeOfDayNote: '時間帯の反映: 時間帯が指定されている場合は、空の色と明るさ、全体の光の色味をその時間帯に合わせて変える。緑の看板は文字・形・位置・元の色を保ち、光による色味の変化だけを許す。',
+  },
 }
 
 const CURRENT_IMAGE_SET  = IMAGE_SETS[IMAGE_SET_ID] ?? IMAGE_SETS[1]
-const ORIGINAL_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.original}`
-const MASK_IMAGE_URL     = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.mask}`
+const ORIGINAL_IMAGE_URL = `${PROD_ORIGIN}${IMAGE_PATH}/${CURRENT_IMAGE_SET.original}`
+const MASK_IMAGE_URL     = `${PROD_ORIGIN}${IMAGE_PATH}/${CURRENT_IMAGE_SET.mask}`
 
 // URLクエリ ?set=N のバリデーションヘルパー
-// 1〜4 以外の値・未指定の場合は config の IMAGE_SET_ID を返す
-const resolveImageSetId = (raw: string | undefined): 1 | 2 | 3 | 4 | 5 => {
+// 1〜6 以外の値・未指定の場合は config の IMAGE_SET_ID を返す
+const resolveImageSetId = (raw: string | undefined): 1 | 2 | 3 | 4 | 5 | 6 => {
   const n = Number(raw)
-  if (n === 1 || n === 2 || n === 3 || n === 4 || n === 5) return n
+  if (n === 1 || n === 2 || n === 3 || n === 4 || n === 5 || n === 6) return n
   return IMAGE_SET_ID
 }
 
@@ -114,7 +173,7 @@ app.post('/api/refine-prompt', async (c) => {
   }
 
   let draftPrompt: string
-  let setId: 1 | 2 | 3 | 4
+  let setId: 1 | 2 | 3 | 4 | 5 | 6
   let CURRENT_IMAGE_SET: typeof IMAGE_SETS[1]
   try {
     const body = await c.req.json()
@@ -132,6 +191,10 @@ app.post('/api/refine-prompt', async (c) => {
     ? `${CURRENT_IMAGE_SET.maskAreaLabel}が白く塗りつぶされた画像を渡します。白い範囲が変更対象です。`
     : `加工していない元画像を渡します。白い塗りは存在しないため、white / mask という語で領域を指してはいけません。`
 
+  // セット別のルール上書き（未指定のルールは共通の文言。セット1〜5は常に共通）
+  const ruleOv = CURRENT_IMAGE_SET.systemPromptRuleOverrides ?? {}
+  const ro = (n: 1 | 2 | 3 | 4 | 8 | 9 | 10 | 12 | 13 | 14, def: string) => ruleOv[n] ?? def
+
   const systemPrompt =
     `あなたは画像生成AI向けのプロンプトエンジニアです。以下のルールに厳密に従って、入力された日本語の画像編集指示を、画像生成AIに最適化された英語プロンプトに変換してください。\n\n` +
     `背景情報:\n` +
@@ -142,20 +205,20 @@ app.post('/api/refine-prompt', async (c) => {
     `- ただし、追加する施設・建造物や樹木の上部は、変更対象エリアの上端を自然に越えて背景の前に描いてよい。エリア境界で水平に切り落とさないこと\n` +
     `- 変更対象エリアは「絵を描き込むための枠やキャンバス」ではありません。写真の一部を自然な風景に差し替えるための領域です。完成画像に縁・角丸の輪郭・境界線・枠が残ってはいけません\n\n` +
     `ルール:\n` +
-    `1. 生成する英語プロンプトの冒頭に必ず "photorealistic, real photograph, DSLR photo," と明記し、末尾にも "photorealistic real photograph, not anime, not illustration, not a painting, not CG, not a poster" と明記する\n` +
-    `2. アニメ風・イラスト風・CG・ポスター風を明確に禁止する表現を入れる\n` +
-    `3. 元画像と同じカメラ位置・視点の高さ・遠近法・光源の方向・時間帯・色調に厳密に一致させる指示を含める。地面は元画像の地面と連続させ、継ぎ目が見えないようにする\n` +
-    `4. 別の絵・イラスト・写真・ポスター・看板・パネルを貼り付けたような表現を禁止する。no picture-in-picture, no collage, no framed image, no visible border, no rounded-corner edge, seamless blend with the surrounding photograph\n` +
+    `1. ${ro(1, `生成する英語プロンプトの冒頭に必ず "photorealistic, real photograph, DSLR photo," と明記し、末尾にも "photorealistic real photograph, not anime, not illustration, not a painting, not CG, not a poster" と明記する`)}\n` +
+    `2. ${ro(2, `アニメ風・イラスト風・CG・ポスター風を明確に禁止する表現を入れる`)}\n` +
+    `3. ${ro(3, `元画像と同じカメラ位置・視点の高さ・遠近法・光源の方向・時間帯・色調に厳密に一致させる指示を含める。地面は元画像の地面と連続させ、継ぎ目が見えないようにする`)}\n` +
+    `4. ${ro(4, `別の絵・イラスト・写真・ポスター・看板・パネルを貼り付けたような表現を禁止する。no picture-in-picture, no collage, no framed image, no visible border, no rounded-corner edge, seamless blend with the surrounding photograph`)}\n` +
     `5. ユーザーが「ファンタジー風」「レトロ」「和風」などのスタイルを指定した場合、それは建築様式・意匠の解釈にのみ適用する。画風は必ず実写写真を維持する\n` +
     `6. ユーザーが商店街・遊歩道・並木道など奥へ細長く伸びる通路状の情景を指定した場合も、元画像のカメラ視点を変更せず、手前に広がる空間として自然に配置する。視点を通路の正面に切り替えてはならない\n` +
     `7. 元画像の既存の建築要素（建物、道路、通路、高架構造物）を保持する指示を含める\n` +
-    `8. 指定されたエリアのみを変更し、それ以外の領域は元画像のまま維持する指示にする\n` +
-    `9. 新たに追加するすべての要素（施設・建造物・樹木・植栽・門・塀などを含む）が、指定エリアの境界や画像の端で不自然に途中で切れないよう指示する。樹木や建物の上部は指定エリアの境界で切り落とさず、背景の空や施設の手前に自然に重なってよい。追加する樹木・建造物は、指定エリアを上方に越えて背景の建物・壁・ネット・空の手前に自然に重なってよい。背景の構造物を保持するとは「描き替えない」という意味であり、手前に樹木・建造物が重なることを禁じるものではない。樹木は幹から枝葉の先端まで樹形全体を描き、水平線・壁の高さ・エリア上端で切り落とさないこと（trees and structures may extend upward and naturally overlap in front of the background wall, netting and sky; render complete tree crowns with full canopies, do not cut off treetops at any horizontal line, the background remains visible behind them）。ただし、重なりは背景の構造物を隠しすぎない範囲にとどめ、背景の建物の看板・屋根の輪郭が判別できる状態を保つこと\n` +
-    `10. ユーザーの回答に夜・夕方・花火・ライトアップ・イルミネーションなどの時間帯や照明の明示的な指定がない場合に限り、元画像と同じ昼間の晴天を維持すること。明示的な指定がある場合は、その指定に従って時間帯・空・照明を変更してよい（unless the user explicitly specifies a time of day or lighting condition (such as night, evening, sunset, fireworks, illumination or light-up), keep the same daytime lighting and clear blue sky as the original photograph; if the user explicitly specifies such a condition, follow the user's specification and render that time of day and lighting）\n` +
+    `8. ${ro(8, `指定されたエリアのみを変更し、それ以外の領域は元画像のまま維持する指示にする`)}\n` +
+    `9. ${ro(9, `新たに追加するすべての要素（施設・建造物・樹木・植栽・門・塀などを含む）が、指定エリアの境界や画像の端で不自然に途中で切れないよう指示する。樹木や建物の上部は指定エリアの境界で切り落とさず、背景の空や施設の手前に自然に重なってよい。追加する樹木・建造物は、指定エリアを上方に越えて背景の建物・壁・ネット・空の手前に自然に重なってよい。背景の構造物を保持するとは「描き替えない」という意味であり、手前に樹木・建造物が重なることを禁じるものではない。樹木は幹から枝葉の先端まで樹形全体を描き、水平線・壁の高さ・エリア上端で切り落とさないこと（trees and structures may extend upward and naturally overlap in front of the background wall, netting and sky; render complete tree crowns with full canopies, do not cut off treetops at any horizontal line, the background remains visible behind them）。ただし、重なりは背景の構造物を隠しすぎない範囲にとどめ、背景の建物の看板・屋根の輪郭が判別できる状態を保つこと`)}\n` +
+    `10. ${ro(10, `ユーザーの回答に夜・夕方・花火・ライトアップ・イルミネーションなどの時間帯や照明の明示的な指定がない場合に限り、元画像と同じ昼間の晴天を維持すること。明示的な指定がある場合は、その指定に従って時間帯・空・照明を変更してよい（unless the user explicitly specifies a time of day or lighting condition (such as night, evening, sunset, fireworks, illumination or light-up), keep the same daytime lighting and clear blue sky as the original photograph; if the user explicitly specifies such a condition, follow the user's specification and render that time of day and lighting）`)}\n` +
     `11. ${CURRENT_IMAGE_SET.edgeTreatmentRule}\n` +
-    `12. 具体的で視覚的に明確な英語表現を使う\n` +
-    `13. 日本特有の建造物は英語名に加えて括弧内に日本語名を補足する\n` +
-    `14. 1つのパラグラフにまとめ、200語以内にする。語数が超過する場合は優先度の低い装飾的な描写を削って調整する\n` +
+    `12. ${ro(12, `具体的で視覚的に明確な英語表現を使う`)}\n` +
+    `13. ${ro(13, `日本特有の建造物は英語名に加えて括弧内に日本語名を補足する`)}\n` +
+    `14. ${ro(14, `1つのパラグラフにまとめ、200語以内にする。語数が超過する場合は優先度の低い装飾的な描写を削って調整する`)}\n` +
     `15. プロンプトのテキストのみを出力し、説明や前置きは一切不要`
 
   try {
@@ -191,7 +254,13 @@ app.post('/api/refine-prompt', async (c) => {
       return c.json({ success: false, error: 'Empty response from OpenAI' }, 502)
     }
 
-    return c.json({ success: true, refinedPrompt })
+    // セット別の固定文（未定義のセット1〜5は連結せず、従来どおりLLMの出力をそのまま返す）
+    const { promptPrefix, promptSuffix } = CURRENT_IMAGE_SET
+    const finalPrompt = (promptPrefix || promptSuffix)
+      ? [promptPrefix, refinedPrompt.replace(/[\s,;.]+$/, '') + '.', promptSuffix].filter(Boolean).join(' ')
+      : refinedPrompt
+
+    return c.json({ success: true, refinedPrompt: finalPrompt })
 
   } catch (err) {
     console.error('refine-prompt handler error:', err)
@@ -210,7 +279,7 @@ app.post('/api/generate-submit', async (c) => {
   }
 
   let prompt: string
-  let setId: 1 | 2 | 3 | 4
+  let setId: 1 | 2 | 3 | 4 | 5 | 6
   let CURRENT_IMAGE_SET: typeof IMAGE_SETS[1]
   let MASK_IMAGE_URL: string
   try {
@@ -221,7 +290,7 @@ app.post('/api/generate-submit', async (c) => {
     }
     setId = resolveImageSetId(body.setId !== undefined ? String(body.setId) : c.req.query('set'))
     CURRENT_IMAGE_SET = IMAGE_SETS[setId]
-    MASK_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.mask}`
+    MASK_IMAGE_URL = `${resolveImageBaseUrl(c.req.url)}/${CURRENT_IMAGE_SET.mask}`
   } catch {
     return c.json({ success: false, error: '必要なパラメータが不足しています' }, 400)
   }
@@ -386,7 +455,7 @@ app.get('/manifest.json', (c) => {
 app.get('/', (c) => {
   const setId = resolveImageSetId(c.req.query('set'))
   const CURRENT_IMAGE_SET  = IMAGE_SETS[setId]
-  const ORIGINAL_IMAGE_URL = `${IMAGE_BASE_URL}/${CURRENT_IMAGE_SET.original}`
+  const ORIGINAL_IMAGE_URL = `${resolveImageBaseUrl(c.req.url)}/${CURRENT_IMAGE_SET.original}`
   return c.html(/* html */`<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -521,7 +590,19 @@ app.get('/', (c) => {
       compositeFeatherRatio: ${CURRENT_IMAGE_SET.compositeFeatherRatio ?? 'null'},
       maskMode: '${CURRENT_IMAGE_SET.maskMode}',
       maskAreaLabel: '${CURRENT_IMAGE_SET.maskAreaLabel}',
-      compositeEnabled: ${CURRENT_IMAGE_SET.compositeEnabled !== false}
+      compositeEnabled: ${CURRENT_IMAGE_SET.compositeEnabled !== false}${
+        CURRENT_IMAGE_SET.compositeIgnoreSkip
+          ? `,\n      compositeIgnoreSkip: ${JSON.stringify(CURRENT_IMAGE_SET.compositeIgnoreSkip).replace(/</g, '\\u003c')}`
+          : ''
+      }${
+        CURRENT_IMAGE_SET.compositeTimeOfDaySkip
+          ? `,\n      compositeTimeOfDaySkip: ${JSON.stringify(CURRENT_IMAGE_SET.compositeTimeOfDaySkip).replace(/</g, '\\u003c')}`
+          : ''
+      }${
+        CURRENT_IMAGE_SET.timeOfDayNote
+          ? `,\n      timeOfDayNote: ${JSON.stringify(CURRENT_IMAGE_SET.timeOfDayNote).replace(/</g, '\\u003c')}`
+          : ''
+      }
     };
   </script>
   <script src="/static/app.js"></script>

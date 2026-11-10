@@ -58,7 +58,16 @@ const SKIP_KEYWORDS_EXTRA = [
   '屋根で覆', '屋根が覆', 'ガラスの屋根', '大屋根', 'ドーム', '天蓋', 'アーケード',
 ];
 
-function shouldSkipComposite(text) {
+// 「季節・時間帯」の行（buildPrompt が付ける行頭ラベル）。時間帯行限定のスキップ語の判定に使う
+const TIME_OF_DAY_LINE_PREFIX = '季節・時間帯:';
+
+/* shouldSkipComposite(text, ignoreWords, timeOfDayOnlyWords)
+   ignoreWords        : セット単位の任意項目 compositeIgnoreSkip。ここに含まれる語はスキップ判定から除外する
+                        （例：セット6の「アーケード」「提灯」など建物・飾りの語）
+   timeOfDayOnlyWords : セット単位の任意項目 compositeTimeOfDaySkip。「季節・時間帯」の行に限って
+                        スキップ判定に加える語（例：朝・雨・曇り・雪）。他の行にこれらの語があってもスキップしない
+   2つの引数を省略（セット1〜5）した場合は従来と完全に同じ挙動 */
+function shouldSkipComposite(text, ignoreWords, timeOfDayOnlyWords) {
   // SKIP_EXTRA_ENABLED=true: 既存リストから「雨」「曇り」を除き、EXTRA を結合して判定
   // SKIP_EXTRA_ENABLED=false: 既存リスト（「雨」「曇り」含む）のみで判定（修正前の挙動）
   const baseList = SKIP_EXTRA_ENABLED
@@ -67,7 +76,19 @@ function shouldSkipComposite(text) {
   const effectiveList = SKIP_EXTRA_ENABLED
     ? [...baseList, ...SKIP_KEYWORDS_EXTRA]
     : baseList;
-  return effectiveList.some((kw) => text.includes(kw));
+  const ignore = Array.isArray(ignoreWords) ? ignoreWords : [];
+  const activeList = ignore.length > 0
+    ? effectiveList.filter(kw => !ignore.includes(kw))
+    : effectiveList;
+  if (activeList.some((kw) => text.includes(kw))) return true;
+
+  // 時間帯行限定の語（セット6のみ）。「季節・時間帯:」で始まる行だけを対象にする
+  const todWords = Array.isArray(timeOfDayOnlyWords) ? timeOfDayOnlyWords : [];
+  if (todWords.length > 0) {
+    const todLines = text.split('\n').filter((line) => line.startsWith(TIME_OF_DAY_LINE_PREFIX));
+    if (todLines.some((line) => todWords.some((kw) => line.includes(kw)))) return true;
+  }
+  return false;
 }
 
 /* ================================================
@@ -377,7 +398,11 @@ function buildPrompt(answers) {
     extras.push(`周囲の環境: ${answers.surroundings}`);
   }
   if (!shouldSkip(answers.timeOfDay)) {
-    extras.push(`季節・時間帯: ${answers.timeOfDay}`);
+    extras.push(`${TIME_OF_DAY_LINE_PREFIX} ${answers.timeOfDay}`);
+    // セット固有の補足（セット6のみ定義。未定義のセット1〜5は何も追加しない）
+    // ※この行は「季節・時間帯:」で始めない（時間帯行限定のスキップ判定の対象にしないため）
+    const todNote = window.__IMAGE_SET__ && window.__IMAGE_SET__.timeOfDayNote;
+    if (todNote) extras.push(todNote);
   }
   if (!shouldSkip(answers.additionalNotes)) {
     extras.push(`追加要素: ${answers.additionalNotes}`);
@@ -435,7 +460,12 @@ async function generateImage() {
     const draftPrompt = buildPrompt(answers);
 
     // 合成スキップ判定：6問の回答を結合した draftPrompt 全体を対象に判定
-    skipComposite = shouldSkipComposite(draftPrompt);
+    const setCfg = window.__IMAGE_SET__ || {};
+    skipComposite = shouldSkipComposite(
+      draftPrompt,
+      setCfg.compositeIgnoreSkip,      // 未指定（セット1〜5）は undefined → 従来どおり
+      setCfg.compositeTimeOfDaySkip    // 未指定（セット1〜5）は undefined → 従来どおり
+    );
     console.log(`[composite] skipComposite=${skipComposite} / draftPrompt snippet: "${draftPrompt.slice(0, 60)}..."`);
 
     addMessage('プロンプトを最適化中...🔄', false);
