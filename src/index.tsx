@@ -55,6 +55,8 @@ const IMAGE_SETS: Record<number, {
   conceptEnabled?: boolean           // 任意。true のセットだけ、コンセプトタイトル・文章（/api/generate-concept）を生成・表示する。未指定は false 扱い（セット1〜5）
   conceptPlace?: string              // 任意。コンセプト文章で場所に触れるときの表記（conceptEnabled のセットのみ使用）
   conceptTheme?: 'arcade' | 'store'  // 任意。コンセプトの systemPrompt・検査の文面の出し分け（CONCEPT_THEMES のキー）。未指定は 'arcade'（セット6）
+  foregroundBuildingKeywords?: string[]  // 任意。施設（ドラフト1行目の「○○をメインとした場所にする」の○○）にこれらの語が含まれるとき、foregroundBuildingSentence を promptPrefix の直後に挿入する。未指定のセット（1〜6）は挿入なし
+  foregroundBuildingSentence?: string    // 任意。上記キーワードに一致したときに promptPrefix の直後へ連結する固定文（英語・アポストロフィを含めない）
 }> = {
   1: {
     original: '001-motogazou-station01.jpg',
@@ -153,29 +155,30 @@ const IMAGE_SETS: Record<number, {
     conceptPlace: '池田のサカエマチ2番街',
   },
   // 【セット7】川西の2階建て店舗の前の駐車場を、6問の回答に沿った新しい空間に作り替える（マスクなし・Canvas合成なし）
-  //   ・original と mask は同じファイル。maskMode:'none' なので元画像をそのまま fal.ai に送る
+  //   ・original は元の写真、mask は左右の置物（像・犬・コーン等）を画像加工で消した 007-motogazou-store-clean.jpg（加工範囲の外側の画素は元画像と同一）。maskMode:'none' なので mask の画像をそのまま fal.ai に送る。original はページ表示用
   //   ・compositeEnabled:false のため、貼り戻し合成は行わない（compositeCutRatio は型上必須なだけで未使用）
   //   ・maskAreaLabel だけが buildPrompt の日本語ドラフト（= shouldSkipComposite の判定対象）に入る。判定語（アーケード・提灯・夜・ドーム・大屋根 など）を含めないこと
   //   ・maskAreaDetail / 各ルール上書きは systemPrompt 側。英語の見本文は置かない。領域指定を意味する語（mask・white・マスク・白）は使わない
   7: {
     original: '007-motogazou-store.jpg',
-    mask: '007-motogazou-store.jpg',
+    mask: '007-motogazou-store-clean.jpg',
     sceneDescription: '川西にある2階建ての店舗（瓦屋根・ピンクの外壁）と、その前に広がる駐車場',
     maskAreaLabel: '店舗前の駐車場のエリア',
     maskAreaDetail:
-      '変更対象は、店舗の前に広がる駐車場（アスファルトの地面）と、その右側に続くコンクリート舗装面の範囲です。目的は、この範囲を、ユーザーの回答に沿った新しい空間に作り替えることです。英語プロンプトでこのエリアを指す場合は必ず "the parking lot in front of the store" と呼ぶこと。塗りつぶしや領域指定を意味する語は一切使わないこと。駐車場の上にある既存の置物や小物（動物の置物、コーン類など）は、撤去してよく、回答に沿って作り替えてもよい。ただし、それらの名前を英語プロンプトに書かないこと。撤去した跡は、駐車場の地面で自然に埋めること（左の置物は歩道との境にあるが、撤去してよい。歩道そのものは元のまま残す）。' +
-      '【店舗の扱い】店舗の建物は、取り壊したり、形・色・位置・大きさを変えたりしないこと。作り替えるのではなく、手前に置いた物の後ろに、元のまま建っているように描くこと。瓦屋根、2階の5つの窓とシャッター、ピンクの外壁、入口のレンガの庇は、手前の物に覆われない部分は元画像と同じに見えるようにすること。1階の4つの青い日よけ、入口前のレンガ調タイルのステップ、入口脇の赤いポストも店舗の一部であり、同じ扱いで元のまま残すこと。右側の小さな別棟（白い扉）は、左右の建物と同じ扱いとし、新しい物に隠れない部分は元画像のままにすること。この保持の指示は固定文に含まれるので、英語では短くしか書かないこと。' +
+      '変更対象は、店舗の前に広がる駐車場と、その右側に続くコンクリート舗装面の範囲です。目的は、この範囲を、ユーザーの回答に沿った新しい空間に作り替えることです。英語プロンプトでこのエリアを指す場合は必ず "the parking lot in front of the store" と呼ぶこと。塗りつぶしや領域指定を意味する語は一切使わないこと。' +
+      '【店舗の扱い】店舗の建物は、取り壊したり、形・色・位置・大きさを変えたりしないこと。作り替えるのではなく、手前に置いた物の後ろに、元のまま建っているように描くこと。瓦屋根、2階の5つの窓とシャッター、ピンクの外壁、入口のレンガの庇は、手前の物に覆われない部分は元画像と同じに見えるようにすること。1階の4つの青い日よけ、入口前のレンガ調タイルのステップ、入口脇の細い白い棒に付いた小さな赤い四角い箱（扉の高さの約3分の1）も店舗の一部であり、同じ扱いで元のまま残すこと。右側の小さな別棟（白い扉）は、左右の建物と同じ扱いとし、新しい物に隠れない部分は元画像のままにすること。この保持の指示は固定文に含まれるので、英語では短くしか書かないこと。' +
       '【重なり】新しく作る物の大きさに上限はなく、回答の内容に合わせてよい（大きな建物も可）。手前の物によって、店舗の屋根・窓・入口などの一部または大部分が隠れてもよい。ただし、その場合も店舗を別の建物に描き替えたり、色や形を変えたりしてはならない。' +
-      '【描き方】新しく作る物の大きさに上限はないので、高い建物や木が画像の上端からはみ出してもよい。これは自然な写真の構図として許可する。カメラ位置・画角は変えず、建物や木を縮めて画像の内側に収めないこと。禁止するのは、画像の内側で建物や木が不自然に横一直線に途切れることだけである。足元は駐車場の地面に自然に接するようにし、接地の影を付けること。' +
+      '【描き方】新しく作る物の大きさに上限はないので、高い建物や木が画像の上端からはみ出してもよい。これは自然な写真の構図として許可する。カメラ位置・画角は変えず、建物や木を縮めて画像の内側に収めないこと。禁止するのは、画像の内側で建物や木が不自然に横一直線に途切れることだけである。足元は周囲の地面に自然に接するようにし、接地の影を付けること（大きな建物は前庭や車寄せの地面とし、駐車場の舗装とは書かない）。' +
       '【固定するもの】カメラ位置・視点の高さ・画角・遠近は元画像と同一にすること（固定文に含まれるので英語では書かない）。左右の建物、木、空、背景の山は、新しい物が重ならない部分では元画像のままにすること。' +
       '【残すもの】手前の歩道、左右のレンガ塀、塀に貼られたポスターは元画像のまま残すこと。新しい物は、歩道・レンガ塀・ポスターの前には置かないこと。' +
       '【空と光】ユーザーが季節・時間帯や天候を指定した場合は、空の色と明るさ、全体の光の色味と明るさ（左右の建物・木・山にかかる光を含む）だけを、指定に合わせて変えてよい。建物・塀・ポスターの形・位置・柄は変えないこと。雨・曇り・雪は、空・光・雰囲気の表現に限り、路面の濡れや積雪は描かないこと。指定がない場合に限り、元画像と同じ昼間の空と光のままにすること。' +
       '【文字の禁止】新しい文字は描かないこと。店名・看板・のぼり・旗・庇・壁・窓・メニュー・家具・食器・照明に、文字・英単語・数字・ロゴ・店名を一切描かないこと。施設の種類やスタイルを文字で示さないこと。ただし、元画像にあるポスターの既存の文字は、元のまま残すこと。' +
-      '【様式の書き方】施設名の直前に「レトロ」「モダン」「和風」「ヴィンテージ」などの様式の形容詞を付けないこと。スタイルの回答は、木材の質感・色調・ランプの色・形といった見た目の描写だけで表すこと。' +
-      '【施設が未指定の場合】施設が未指定（「特になし」を含む）の場合は、駐車場を、芝生・木・植栽・ベンチのある緑の広場に作り替えること。「何も置かない」「構造物なし」「空き地」「人がいない」とは書かないこと。' +
+      '【様式の書き方】施設名の直前に「レトロ」「モダン」「和風」「ヴィンテージ」などの様式の形容詞を付けないこと。スタイルの回答は、木材の質感・色調・ランプの色・形といった見た目の描写だけで表すこと。スタイルの回答は新しく作る物だけに適用し、店舗とその付属物（入口脇の赤い箱を含む）には適用しないこと。' +
+      '【施設が大きな建物の場合】施設が大きな建物（ホテル・ビル・マンション・病院・学校、または回答に「○階建て」とある建物）の場合は、その建物そのものを主語にして、駐車場に新しく建つ建物として書くこと。「エリア」「敷地」「ゾーン」と書いて建物の存在をぼかさないこと。短い句で次の2点を含めること。(1)階数・外壁の素材と色（回答にある内容だけを書き、回答にない階数は書かない）。(2)建物の足元は、その建物の前庭・車寄せ・植栽などの地面として書き、「駐車場の地面と自然につながる」「駐車場の舗装」とは書かないこと。建物の位置（駐車場の手前側のカメラに近い位置）・向き（正面がカメラのほう）・店舗との重なりは、サーバーが固定文として先頭側に付けるので、英語では書かないこと。カフェ・売店・小屋など店舗より小さい建物と、広場・庭・公園には、この項目を使わず、従来どおり書くこと。' +
+      '【施設が広場・公園・庭、または未指定の場合】施設が広場・公園・庭の場合、または未指定（「特になし」を含む）の場合は、駐車場を、芝生・木・植栽・ベンチのある緑の広場に作り替えること。地面は、芝生・小道・植栽で書き、"asphalt"、"parking lot surface"、"paved parking" など駐車場の舗装を表す語は、英語プロンプトの中間部分に書かないこと。「何も置かない」「構造物なし」「空き地」「人がいない」とは書かないこと。' +
       '【人物】人物の数・年齢層・様子は、ユーザーの回答（利用シーン）に合わせること。利用シーンが未指定（「特になし」を含む）の場合は、少人数の人物がいてよい。' +
       '【スタイル・素材・色】ユーザーの回答に従うこと。回答に指定がない場合は、特定の素材に固定せず、周囲の景観に自然に調和するデザインにすること。',
-    edgeTreatmentRule: '新しく作る物の足元が、駐車場の地面と自然に馴染み、店舗・歩道・レンガ塀との境目が不自然にならないように短く書く（店舗や周囲の保持の指示は固定文に含まれるため書かない）',
+    edgeTreatmentRule: '新しく作る物の足元が、地面と自然に接し、店舗・歩道・レンガ塀との境目が不自然にならないように短く書く（大きな建物は前庭や車寄せの地面とし、駐車場の舗装とは書かない。店舗や周囲の保持の指示は固定文に含まれるため書かない）',
     maskMode: 'none',
     aspectRatio: '16:9',
     compositeEnabled: false,
@@ -183,24 +186,27 @@ const IMAGE_SETS: Record<number, {
     systemPromptRuleOverrides: {
       1: '英語プロンプトの先頭と末尾の定型句（"photorealistic, real photograph, DSLR photo," や "not anime, not illustration…" など）はサーバー側で付けるので、あなたの出力には書かない。出力は中間部分だけにする',
       2: 'アニメ風・イラスト風・CG・ポスター風の禁止表現はサーバー側が末尾に付けるので、あなたの出力には書かない',
-      3: 'カメラ位置・視点の高さ・遠近法・構図を元画像と一致させる指示はサーバー側の固定文に含まれるので英語では書かない。光源の方向・時間帯・色調は、ユーザーが季節・時間帯や天候を指定していない場合に限り、元画像と同じ昼間にする（指定がある場合はルール10に従う）。新しく作る物の足元は、駐車場の地面と連続させ、継ぎ目が見えないようにする',
+      3: 'カメラ位置・視点の高さ・遠近法・構図を元画像と一致させる指示はサーバー側の固定文に含まれるので英語では書かない。光源の方向・時間帯・色調は、ユーザーが季節・時間帯や天候を指定していない場合に限り、元画像と同じ昼間にする（指定がある場合はルール10に従う）。新しく作る物の足元は、周囲の地面と自然に接し、継ぎ目が見えないようにする（大きな建物は前庭や車寄せの地面とし、駐車場の舗装とは書かない）',
       4: 'コラージュ・枠・境界線・貼り付けの禁止表現はサーバー側が末尾に付けるので、あなたの出力には書かない',
       8: '指定されたエリア（店舗前の駐車場と、その右側のコンクリート舗装面）のみを作り替え、それ以外の領域（店舗・左右の建物・木・空・山・歩道・レンガ塀・ポスター）は元画像のまま維持する（保持の指示はサーバー側の固定文に含まれるので英語では書かない）。ただしユーザーが時間帯や天候を指定した場合は、空の色・明るさと全体の光の色味・明るさを指定に合わせて変えてよい（建物・塀・ポスターの形・位置・柄は変えない）',
-      9: '新しく作るすべての要素（建物・施設・樹木・植栽・ベンチ・人物など）について、画像の内側で不自然に横一直線に途切れないよう指示する。大きさに上限はなく、高い建物や木が画像の上端からはみ出すのは、自然な写真の構図として許可する。その場合もカメラ位置・画角は変えず、建物や木を縮めて画像の内側に収めない。禁止するのは、画像の内側で建物や木が不自然に横一直線に途切れることだけである。店舗の手前に重なって店舗の一部または大部分を隠してもよい。足元は駐車場の地面に自然に接するようにする。背景の店舗を保持するとは「描き替えない」という意味であり、手前に物が重なることを禁じるものではない。この配置の指示は末尾の固定文に含まれるので、英語では書かない',
+      9: '新しく作るすべての要素（建物・施設・樹木・植栽・ベンチ・人物など）について、画像の内側で不自然に横一直線に途切れないよう指示する。大きさに上限はなく、高い建物や木が画像の上端からはみ出すのは、自然な写真の構図として許可する。その場合もカメラ位置・画角は変えず、建物や木を縮めて画像の内側に収めない。禁止するのは、画像の内側で建物や木が不自然に横一直線に途切れることだけである。店舗の手前に重なって店舗の一部または大部分を隠してもよい。足元は周囲の地面に自然に接するようにする。背景の店舗を保持するとは「描き替えない」という意味であり、手前に物が重なることを禁じるものではない。この配置の指示は固定文に含まれるので、英語では書かない（大きな建物の位置・向き・店舗との重なりも、サーバーが固定文として付けるので書かない）',
       10: '空・光・時間帯の扱い。ユーザーの回答の「季節・時間帯」に時間帯・天候・照明の指定がある場合は、その指定に合わせて、空の色と明るさ、画像全体の光の色味と明るさ、雰囲気を変える（左右の建物・木・山にかかる光の色味を含む）。夕方・夕暮れ・夕焼けなら、橙から紫へ移る夕空と、低い位置からの暖かい橙色の光にする。夜なら、暗い夜空と、暗めの全体の光、やわらかな人工光を中心にする。朝・早朝なら、淡く澄んだ朝の空と、低い角度からのやわらかな光にする。雨・曇り・雪は、空・光・雰囲気の表現に限り、路面の濡れ・水たまり・積雪は描かない。いずれの場合も、店舗・塀・ポスターの形・位置・柄は変えない。指定がない場合に限り、元画像と同じ昼間の空と光のままにする。星・月・光の演出などの空の要素は、ユーザーの回答に明記されている場合だけ描く',
       12: '具体的で視覚的に明確な英語表現を使う。施設は素材・色・形・照明で描写し、看板・店名・文字・ロゴを意味する語で描写しない。施設名（カフェ・マルシェ・店・屋台など）の直前に、「レトロ」「モダン」「和風」「ヴィンテージ」「アンティーク」などの様式を表す形容詞や複合語を付けない。様式は、木目・色調・ランプの色・形などの素材・色・形・照明の描写だけで表す',
       13: '括弧内の日本語補足は付けず、英語の語句だけで書く。日本語の店名・看板文字・日本語表記を英語プロンプトに入れない',
-      14: '1つのパラグラフにまとめ、英語プロンプトの中間部分だけを出力する（先頭の定型句、カメラ・店舗・周囲の保持、重なりの許可、上端からのはみ出しの許可、置物の撤去、文字を描かないこと、末尾の定型句はサーバーが付ける。ルール7が求める保持の指示もこれに含まれるので書かない）。固定文と重複する内容は書かず、70語以内にする（厳守。短い句をカンマで並べる）。書く順序は、(1)時間帯・空・光の描写（指定がある場合）、(2)新しく作る施設・スタイル・素材・色・地面、(3)人物。施設が未指定（ドラフトの「特になしをメインとした場所にする」は未指定の意味）の場合は、(2)を芝生・木・植栽・ベンチのある緑の広場にし、「何も置かない」「構造物なし」「空き地」「人がいない」という意味の語は書かない。利用シーンが未指定の場合は、(3)に少人数の人物を書いてよい。語数が超過する場合は装飾的な描写を削り、時間帯・空・光の描写は削らない',
+      14: '1つのパラグラフにまとめ、英語プロンプトの中間部分だけを出力する（先頭の定型句、カメラ・店舗・周囲の保持、重なりの許可、上端からのはみ出しの許可、文字を描かないこと、末尾の定型句はサーバーが付ける。ルール7が求める保持の指示もこれに含まれるので書かない。施設が大きな建物の場合の位置・向き・店舗との重なりも、サーバーが付けるので書かない）。固定文と重複する内容は書かず、70語以内にする（厳守。短い句をカンマで並べる）。書く順序は、(1)時間帯・空・光の描写（指定がある場合）、(2)新しく作る施設・スタイル・素材・色・地面（施設が大きな建物の場合は、背景情報の【施設が大きな建物の場合】の2点を含める。建物そのものを主語にし、「エリア」「敷地」「ゾーン」でぼかさない。この場合も70語以内）、(3)人物。施設が未指定（ドラフトの「特になしをメインとした場所にする」は未指定の意味）の場合は、(2)を芝生・木・植栽・ベンチのある緑の広場にし、「何も置かない」「構造物なし」「空き地」「人がいない」という意味の語は書かない。施設が広場・公園・庭の場合、または未指定の場合は、地面を芝生・小道・植栽で書き、"asphalt"、"parking lot surface" など駐車場の舗装を表す語は書かない。利用シーンが未指定の場合は、(3)に少人数の人物を書いてよい。語数が超過する場合は装飾的な描写を削り、時間帯・空・光の描写は削らない',
     },
     // 英語プロンプトの先頭・末尾にサーバー側で連結する固定文（店舗の保持・周囲の保持・文字なし・写実）。LLMには中間部分だけを書かせる
-    promptPrefix: 'photorealistic, real photograph, DSLR photo, taken from exactly the same camera position, viewpoint height, lens, perspective and framing as the original photograph. The two-story shop with its tiled roof, five second-floor windows with shutters, pink exterior wall and brick entrance canopy, four blue awnings on the first floor, tiled entrance steps and red post box stands exactly as in the original, unchanged in shape, color, position and size, and is never demolished or redrawn; only the parking lot in front of it and the concrete paved area on its right are redesigned. The sidewalk in the foreground and the brick walls on the left and right with their posters stay exactly as in the original. The neighboring buildings, including the small separate building with a white door on the right, the trees, the sky and the mountains in the background stay as in the original, except where new objects cover them. If a season, time of day or weather is specified, only the color of the sky and the overall lighting may change; the shapes and positions of everything stay the same.',
-    promptSuffix: 'New objects may stand in front of the shop and hide part or most of it, but the visible parts of the shop stay exactly as in the original. New objects may be as tall as the request calls for, and tall buildings or trees may extend past the top edge of the image as in a natural photograph, without changing the camera position or framing and without shrinking them to fit; only inside the image, no building or tree is ever cut off by an unnatural straight horizontal edge. Their bases meet the ground naturally with soft contact shadows. The small ornaments and traffic cones near the brick walls are removed. New objects are placed only on the parking lot and the paved area on its right, never in front of the sidewalk, the brick walls or the posters. No new text, no letters, no numbers, no logos, no shop names and no signboard lettering anywhere; the existing posters stay as in the original. No collage, no visible border. photorealistic real photograph, not anime, not illustration, not CG.',
+    promptPrefix: 'photorealistic, real photograph, DSLR photo, taken from exactly the same camera position, viewpoint height, lens, perspective and framing as the original photograph. The pink two-story shop behind the parking lot is never redrawn: wherever it remains visible, its tiled roof, five second-floor windows with shutters, pink wall, brick entrance canopy, four blue awnings, tiled entrance steps and the small low red square box on a short thin white pole beside the entrance (about one third of the door height) look exactly as in the original. New buildings and objects on the parking lot may stand in the foreground close to the camera, in front of the shop, and hide part or most of it. Only the parking lot and the concrete paved area on its right are redesigned. The sidewalk in the foreground and the brick walls on the left and right with their posters stay as in the original. The neighboring buildings, including the small separate building with a white door on the right, the trees, the sky and the mountains in the background stay as in the original, except where new objects cover them. If a season, time of day or weather is specified, only the color of the sky and the overall lighting change. The requested style applies only to new objects, never to the shop and its fittings.',
+    promptSuffix: 'Where new objects cover the shop, the parts still visible stay exactly as in the original. New objects may be as tall as the request calls for, and tall buildings or trees may extend past the top edge of the image as in a natural photograph, without changing the camera position or framing and without shrinking them to fit; only inside the image, no building or tree is ever cut off by an unnatural straight horizontal edge. Their bases meet the ground naturally with soft contact shadows. New objects are placed only on the parking lot and the paved area on its right, never in front of the sidewalk, the brick walls or the posters. No new text, no letters, no numbers, no logos, no shop names and no signboard lettering anywhere; the existing posters stay as in the original. No collage, no visible border. photorealistic real photograph, not anime, not illustration, not CG.',
     // 「季節・時間帯:」行の直後に付く補足。日本語ドラフトに入るため、shouldSkipComposite の判定語（夜・夕方・雨・星 等）は含めない
-    timeOfDayNote: '時間帯の反映: 時間帯が指定されている場合は、空の色と明るさ、全体の光の色味をその時間帯に合わせて変える。店舗は形・色・位置を保ち、光による色味の変化だけを許す。',
+    timeOfDayNote: '時間帯の反映: 時間帯が指定されている場合は、空の色と明るさ、全体の光の色味をその時間帯に合わせて変える。店舗は描き替えず、手前の新しい建物に隠れてもよい。見えている部分は、光による色味の変化だけを許す。',
     // 【コンセプト】セット6と同じ仕組み。川西用の文面・検査に出し分ける（conceptTheme: 'store'）
     conceptEnabled: true,
     conceptPlace: '川西の店舗前',
     conceptTheme: 'store',
+    // 【手前の大きな建物】施設に下記の語が含まれるときだけ、サーバー側で promptPrefix の直後に英文を足す（LLMには位置・向き・重なりを書かせない）
+    foregroundBuildingKeywords: ['ホテル', 'ビル', 'マンション', '病院', '学校', '図書館', '美術館', '博物館', '体育館', '庁舎', '階建て'],
+    foregroundBuildingSentence: 'The new main building stands on the front part of the parking lot, just behind the low brick walls, close to the camera, its facade facing the viewer, large in the frame, hiding most of the pink shop behind it.',
   },
 }
 
@@ -312,8 +318,17 @@ app.post('/api/refine-prompt', async (c) => {
 
     // セット別の固定文（未定義のセット1〜5は連結せず、従来どおりLLMの出力をそのまま返す）
     const { promptPrefix, promptSuffix } = CURRENT_IMAGE_SET
+    // 任意項目 foregroundBuildingKeywords / foregroundBuildingSentence があるセット（セット7）だけ、
+    // 施設（ドラフト1行目）にキーワードが含まれるとき、英文を promptPrefix の直後へ挿入する。項目のないセット1〜6は従来どおり
+    const { foregroundBuildingKeywords, foregroundBuildingSentence } = CURRENT_IMAGE_SET
+    let foregroundSentence: string | undefined
+    if (foregroundBuildingKeywords && foregroundBuildingSentence) {
+      const m = draftPrompt.match(/^.*?を(.*?)をメインとした場所にする。/m)
+      const facility = m ? m[1] : ''
+      if (foregroundBuildingKeywords.some((kw) => facility.includes(kw))) foregroundSentence = foregroundBuildingSentence
+    }
     const finalPrompt = (promptPrefix || promptSuffix)
-      ? [promptPrefix, refinedPrompt.replace(/[\s,;.]+$/, '') + '.', promptSuffix].filter(Boolean).join(' ')
+      ? [promptPrefix, foregroundSentence, refinedPrompt.replace(/[\s,;.]+$/, '') + '.', promptSuffix].filter(Boolean).join(' ')
       : refinedPrompt
 
     return c.json({ success: true, refinedPrompt: finalPrompt })
