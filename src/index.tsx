@@ -325,7 +325,7 @@ const buildConceptSystemPrompt = (place: string): string => [
   '・全体で150〜200字（改行を除く）、3〜4段落にします。段落の間は空行で区切ります。',
   '・文末は敬体（「〜です」「〜ます」）で統一します。',
   '・次の順に書きます。',
-  `  1段落目: どんな場所か。「${place}」に、どんな施設が生まれるかを書く（40〜50字。場所の表記だけで${conceptCount(place)}字あるので、残りは約30〜40字）`,
+  `  1段落目: どんな場所か。「${place}」に、どんな施設が生まれるかを書く（40〜50字。場所の表記だけで${conceptCount(place)}字あるので、残りは約30〜40字）。施設が指定なしのときは、アーケードの通りが、これからどんな場所になれるかを書く`,
   '  2段落目: 誰が、どんな気持ちで、どう過ごすかを書く（40〜50字）',
   '  3段落目: 季節・時間帯の情景を、光・空気・音・色などで書く（40〜50字）',
   '  4段落目: この場所がまちにもたらす価値を書く（35〜50字）',
@@ -337,7 +337,9 @@ const buildConceptSystemPrompt = (place: string): string => [
   '・回答にない事実（歴史、人口、来訪者数、実在の店名・施設名、数値、イベント名）をつくりません。',
   '・回答に書かれた要素を中心に、言葉をふくらませます。回答に出てこない具体物を足しません。',
   '・施設から連想される品物・音楽・催しなど、回答にない具体物を足しません（たとえばマルシェでも、「新鮮な食材」「手作り品」「音楽」は、回答にない限り書きません）。様子は、光・空気・人の気持ちなどで表します。',
-  '・今の商店街の実態（「日々の暮らしを支える」など）を断定しません。これから生まれる場所として書きます。',
+  '・文章は「これから生まれる場所」として書きます。第1段落も含め、今の商店街の様子（人が行き交っている、暮らしを支えている、賑わっている、など）を述べません。現状の説明ではなく、これから先の姿として書きます。',
+  '・回答の多くが指定なしのときは、アーケードの通りが「これからどんな場所になれるか」を、光・空気・人の気持ちで書きます。今の商店街の様子の説明にはしません。',
+  '・回答に書かれていない限り、「歴史」「伝統」「老舗」「多世代」は使いません。地域の人々の数や属性（多彩な人々、多世代、など）も書きません。',
   '・「その他指定」は、書かれているときだけ自然に織り込みます。',
   '・参加者の言葉をそのまま並べず、読み手の心に残る言い回しに整えます。',
   '・英語の店名、英文、アルファベット表記は使いません。「サカエマチ2番街」のカタカナと数字はそのまま使えます。',
@@ -372,21 +374,52 @@ const buildConceptUserMessage = (a: Record<string, unknown>): string => {
   ].join('\n')
 }
 
-const CONCEPT_TITLE_TARGET = 17  // タイトルの目標字数。範囲内の案がないときは、これに最も近い案を選ぶ
+const CONCEPT_TITLE_TARGET = 17  // タイトルの目標字数。条件に合う案がないときは、これに最も近い案を選ぶ
+
+// コンセプト生成で使うモデル（/api/refine-prompt のモデルとは別。ここだけを変えればよい）
+const CONCEPT_MODEL = 'gpt-4.1-mini'
+
+// タイトル案の除外条件
+//   seasonTime: 季節語と時間帯語の直結（冬朝・夏夕暮れ・冬夜 など。「冬の朝」は「の」が入るので対象外）
+//   place:      地名（池田、サカエマチ）
+//   latin:      英字（2文字以上）
+type TitleReason = 'seasonTime' | 'place' | 'latin'
+const CONCEPT_SEASON_TIME_RE = /(春|夏|秋|冬)(朝|昼|夕暮れ|夕方|夕|夜)/
+const CONCEPT_PLACE_RE       = /池田|サカエマチ/
+const CONCEPT_LATIN_RE       = /[A-Za-zＡ-Ｚａ-ｚ]{2,}/
+const titleReasonsOf = (t: string): TitleReason[] => {
+  const r: TitleReason[] = []
+  if (CONCEPT_SEASON_TIME_RE.test(t)) r.push('seasonTime')
+  if (CONCEPT_PLACE_RE.test(t)) r.push('place')
+  if (CONCEPT_LATIN_RE.test(t)) r.push('latin')
+  return r
+}
+const TITLE_REASON_LABEL: Record<TitleReason, string> = {
+  seasonTime: '季節語と時間帯語の直結（冬朝・夏夕暮れのような造語）',
+  place: '地名',
+  latin: '英字',
+}
+
+// 文章に、回答にない限り使わない語（回答に含まれている語は除外して検査する）
+const CONCEPT_BANNED_WORDS = ['歴史', '伝統', '老舗', '多世代']
 
 type ConceptDraft = { titles: string[]; text: string; raw: string }
 type ConceptCheck = {
-  title: string          // 選ばれたタイトル
-  titleIndex: number     // 選ばれた案の番号（1始まり）
-  titleLengths: number[] // 各案の字数
-  titleLength: number    // 選ばれたタイトルの字数
-  titleInRange: boolean  // 範囲内の案があったか
+  title: string                 // 選ばれたタイトル
+  titleIndex: number            // 選ばれた案の番号（1始まり）
+  titleLengths: number[]        // 各案の字数
+  titleReasons: TitleReason[][] // 各案の除外理由（空配列＝除外なし）
+  titleLength: number           // 選ばれたタイトルの字数
+  titleInRange: boolean         // 選ばれたタイトルが15〜20字か
+  titleOk: boolean              // 選ばれたタイトルが「15〜20字」かつ「除外条件なし」か
   textLength: number
   paragraphs: number
-  hasLatin: boolean
+  hasLatin: boolean             // 選ばれたタイトルか文章に英字
   hasKawanishi: boolean
-  inRange: boolean
-  distance: number  // 範囲からの外れ量の合計（小さいほど良い）
+  bannedWords: string[]         // 文章に含まれる、回答にない禁止語
+  inRange: boolean              // すべての条件を満たしているか（検証用の表示。再生成の判定は reasons）
+  distance: number              // 範囲からの外れ量の合計（小さいほど良い）
+  reasons: string[]             // 再生成の理由（空なら再生成しない）
 }
 
 // モデルの出力（JSON文字列）を検証して {titles, text} にする。不正なら null
@@ -409,50 +442,86 @@ const parseConceptJson = (content: string): ConceptDraft | null => {
   }
 }
 
-// 3案のうち、15〜20字に入っている最初の案を選ぶ。どれも入らなければ17字に最も近い案（同じ近さなら先の案）
-const pickConceptTitleIndex = (lengths: number[]): number => {
-  const inIdx = lengths.findIndex((n) => n >= CONCEPT_TITLE_MIN && n <= CONCEPT_TITLE_MAX)
-  if (inIdx >= 0) return inIdx
-  let best = 0
-  lengths.forEach((n, i) => {
-    if (Math.abs(n - CONCEPT_TITLE_TARGET) < Math.abs(lengths[best] - CONCEPT_TITLE_TARGET)) best = i
-  })
-  return best
+// タイトル案の選び方
+//   1. 「15〜20字」かつ「除外条件なし」の最初の案
+//   2. なければ、除外条件なしの案のうち17字に最も近いもの（同じ近さなら先の案）
+//   3. 全案が除外条件に当たるときは、全案のうち17字に最も近いもの
+const pickConceptTitleIndex = (lengths: number[], reasons: TitleReason[][]): number => {
+  const inRange = (n: number) => n >= CONCEPT_TITLE_MIN && n <= CONCEPT_TITLE_MAX
+  const first = lengths.findIndex((n, i) => inRange(n) && reasons[i].length === 0)
+  if (first >= 0) return first
+  const closest = (idxs: number[]): number =>
+    idxs.reduce((b, i) => (Math.abs(lengths[i] - CONCEPT_TITLE_TARGET) < Math.abs(lengths[b] - CONCEPT_TITLE_TARGET) ? i : b), idxs[0])
+  const clean = lengths.map((_, i) => i).filter((i) => reasons[i].length === 0)
+  return closest(clean.length ? clean : lengths.map((_, i) => i))
 }
 
-const checkConcept = (d: ConceptDraft): ConceptCheck => {
+// answersText: 回答の全文（回答に含まれている語は、禁止語の検査から除く）
+const checkConcept = (d: ConceptDraft, answersText: string): ConceptCheck => {
   const titleLengths = d.titles.map(conceptCount)
-  const idx          = pickConceptTitleIndex(titleLengths)
+  const titleReasons = d.titles.map(titleReasonsOf)
+  const idx          = pickConceptTitleIndex(titleLengths, titleReasons)
   const title        = d.titles[idx]
   const titleLength  = titleLengths[idx]
   const titleInRange = titleLength >= CONCEPT_TITLE_MIN && titleLength <= CONCEPT_TITLE_MAX
+  const titleOk      = titleInRange && titleReasons[idx].length === 0
   const textLength   = conceptTextCount(d.text)
   const paragraphs   = d.text.split(/\n+/).filter((p) => p.trim()).length
   // 英字・「川西」は、選ばれたタイトルと文章を検査する
-  const hasLatin     = /[A-Za-zＡ-Ｚａ-ｚ]{2,}/.test(title + d.text)
+  const hasLatin     = CONCEPT_LATIN_RE.test(title + d.text)
   const hasKawanishi = /川西/.test(title + d.text)
+  const bannedWords  = CONCEPT_BANNED_WORDS.filter((w) => d.text.includes(w) && !answersText.includes(w))
   const out = (n: number, lo: number, hi: number) => (n < lo ? lo - n : n > hi ? n - hi : 0)
   const distance = out(titleLength, CONCEPT_TITLE_MIN, CONCEPT_TITLE_MAX) + out(textLength, CONCEPT_TEXT_MIN, CONCEPT_TEXT_MAX)
+
+  // 再生成の理由（タイトル）。「15〜20字かつ除外条件なし」の案が1つもないときだけ再生成する。
+  //   titleExcluded: 3案とも除外条件に当たる
+  //   titleLength:   除外条件のない案が、すべて15〜20字の範囲外
+  // 一部の案だけが除外条件に当たる場合は、条件に合う案を選ぶだけで再生成しない。
+  const inRangeLen   = (n: number) => n >= CONCEPT_TITLE_MIN && n <= CONCEPT_TITLE_MAX
+  const allExcluded  = titleReasons.every((r) => r.length > 0)
+  const hasCleanInRange = titleLengths.some((n, i) => inRangeLen(n) && titleReasons[i].length === 0)
+  const reasons: string[] = []
+  if (allExcluded) reasons.push('titleExcluded')
+  if (!hasCleanInRange && (!allExcluded || !titleLengths.some(inRangeLen))) reasons.push('titleLength')
+  if (textLength < CONCEPT_TEXT_MIN || textLength > CONCEPT_TEXT_MAX) reasons.push('textLength')
+  if (hasLatin) reasons.push('latin')
+  if (hasKawanishi) reasons.push('kawanishi')
+  bannedWords.forEach((w) => reasons.push(`word:${w}`))
+
   return {
-    title, titleIndex: idx + 1, titleLengths, titleLength, titleInRange,
-    textLength, paragraphs, hasLatin, hasKawanishi,
-    inRange: distance === 0 && !hasLatin && !hasKawanishi,
-    distance: distance + (hasLatin ? 5 : 0) + (hasKawanishi ? 5 : 0),
+    title, titleIndex: idx + 1, titleLengths, titleReasons, titleLength, titleInRange, titleOk,
+    textLength, paragraphs, hasLatin, hasKawanishi, bannedWords,
+    inRange: reasons.length === 0 && titleOk,
+    distance: distance + (titleReasons[idx].length ? 5 : 0) + (hasLatin ? 5 : 0) + (hasKawanishi ? 5 : 0) + bannedWords.length * 5,
+    reasons,
   }
 }
 
-// 再生成用の指示文（前回の実際の字数と、直し方の具体的な量を伝える）
-const buildConceptFeedback = (ck: ConceptCheck): string => {
+// 再生成用の指示文（前回の実際の字数・使えなかった理由・直し方の具体的な量を伝える）
+const buildConceptFeedback = (ck: ConceptCheck, d: ConceptDraft): string => {
   const parts: string[] = [`前回の出力は、タイトル案が${ck.titleLengths.join('字・')}字、文章${ck.textLength}字（改行を除く）でした。`]
+  // 除外条件に当たったタイトル案を、理由つきで伝える
+  d.titles.forEach((t, i) => {
+    if (ck.titleReasons[i].length) {
+      parts.push(`タイトル案${i + 1}「${t}」は、${ck.titleReasons[i].map((r) => TITLE_REASON_LABEL[r]).join('・')}を含むため使えません。`)
+    }
+  })
   if (ck.hasLatin) parts.push('英字（アルファベット）を含んでいました。')
   if (ck.hasKawanishi) parts.push('「川西」を含んでいました。')
+  if (ck.bannedWords.length) parts.push(`文章に${ck.bannedWords.map((w) => `「${w}」`).join('')}を含んでいました。回答にない語なので、使わないでください。`)
   parts.push('タイトル案は各案15〜20字、文章は150〜200字に直してください。')
-  if (!ck.titleInRange) {
-    // 範囲内の案がなかった場合: 17字に最も近い案を基準に、増減の量を具体的に伝える
-    const diff = Math.abs(CONCEPT_TITLE_TARGET - ck.titleLength)
-    parts.push(ck.titleLength < CONCEPT_TITLE_MIN
-      ? `タイトルは、どの案もあと${diff}字ほど増やし、17字前後にしてください。`
-      : `タイトルは、どの案も${diff}字ほど減らし、17字前後にしてください。`)
+  if (ck.reasons.includes('titleLength') || ck.reasons.includes('titleExcluded')) {
+    if (ck.reasons.includes('titleLength')) {
+      // 範囲内の案がなかった場合: 17字に最も近い案を基準に、増減の量を具体的に伝える
+      const diff = Math.abs(CONCEPT_TITLE_TARGET - ck.titleLength)
+      parts.push(ck.titleLength < CONCEPT_TITLE_MIN
+        ? `タイトルは、どの案もあと${diff}字ほど増やし、17字前後にしてください。`
+        : `タイトルは、どの案も${diff}字ほど減らし、17字前後にしてください。`)
+    }
+    if (ck.titleReasons.some((r) => r.length > 0)) {
+      parts.push('タイトルは、季節語と時間帯語を直結せず（「冬の朝」のように「の」を入れる）、地名と英字を入れずに、新しく3案を作ってください。')
+    }
   }
   if (ck.textLength < CONCEPT_TEXT_MIN) parts.push(`文章はあと約${CONCEPT_TEXT_MIN + 25 - ck.textLength}字増やしてください。`)
   else if (ck.textLength > CONCEPT_TEXT_MAX) parts.push(`文章は約${ck.textLength - (CONCEPT_TEXT_MAX - 25)}字減らしてください。`)
@@ -492,6 +561,8 @@ app.post('/api/generate-concept', async (c) => {
   const place = setCfg.conceptPlace ?? ''
   const systemPrompt = buildConceptSystemPrompt(place)
   const userMessage  = buildConceptUserMessage(body.answers as Record<string, unknown>)
+  // 回答の全文（禁止語の検査で、回答に含まれている語を除外するために使う）
+  const answersText  = Object.values(body.answers as Record<string, unknown>).filter((v) => typeof v === 'string').join(' ')
 
   type Msg = { role: 'system' | 'user' | 'assistant'; content: string }
   const callModel = async (messages: Msg[], temperature: number): Promise<{ ok: true; content: string } | { ok: false; status: number }> => {
@@ -502,7 +573,7 @@ app.post('/api/generate-concept', async (c) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-mini',
+        model: CONCEPT_MODEL,
         temperature,
         max_tokens: 900,
         response_format: { type: 'json_object' },
@@ -529,17 +600,18 @@ app.post('/api/generate-concept', async (c) => {
       return c.json({ success: false, error: `OpenAI API error: ${first.status}` }, 502)
     }
     const draft1 = parseConceptJson(first.content)
-    const check1 = draft1 ? checkConcept(draft1) : null
+    const check1 = draft1 ? checkConcept(draft1, answersText) : null
 
     let best = draft1
     let bestCheck = check1
     let retried = false
 
-    // ---- 範囲外（文字数・英字・川西）または JSON 不正なら 1 回だけ再生成 ----
-    if (!check1 || !check1.inRange) {
+    // ---- 範囲外（字数・除外条件・英字・川西・禁止語）または JSON 不正なら 1 回だけ再生成 ----
+    const retryReasons: string[] = check1 ? check1.reasons : ['json']
+    if (!check1 || check1.reasons.length > 0) {
       retried = true
       const feedback = (draft1 && check1)
-        ? buildConceptFeedback(check1)
+        ? buildConceptFeedback(check1, draft1!)
         : '前回の出力はJSONとして読めませんでした。{"titles": ["...", "...", "..."], "text": "..."} の形式だけを出力してください。'
       const retryMessages: Msg[] = [
         ...baseMessages,
@@ -550,7 +622,7 @@ app.post('/api/generate-concept', async (c) => {
       if (second.ok) {
         const draft2 = parseConceptJson(second.content)
         if (draft2) {
-          const check2 = checkConcept(draft2)
+          const check2 = checkConcept(draft2, answersText)
           // 範囲に近いほうを採用（1回目が JSON 不正なら 2回目）
           if (!bestCheck || check2.distance <= bestCheck.distance) {
             best = draft2
@@ -567,7 +639,7 @@ app.post('/api/generate-concept', async (c) => {
     }
 
     // 範囲外のまま返す場合もブロックせず、文字数を記録する
-    console.log(`[concept] set=${setId} titles=${bestCheck.titleLengths.join('/')} pick=${bestCheck.titleIndex} text=${bestCheck.textLength} paragraphs=${bestCheck.paragraphs} latin=${bestCheck.hasLatin} kawanishi=${bestCheck.hasKawanishi} retried=${retried} inRange=${bestCheck.inRange}`)
+    console.log(`[concept] set=${setId} titles=${bestCheck.titleLengths.join('/')} pick=${bestCheck.titleIndex} text=${bestCheck.textLength} paragraphs=${bestCheck.paragraphs} latin=${bestCheck.hasLatin} kawanishi=${bestCheck.hasKawanishi} words=${bestCheck.bannedWords.join(',') || '-'} excl=${bestCheck.titleReasons.map((r) => r.join('+') || '-').join('/')} retried=${retried} reasons=${retried ? retryReasons.join(',') : '-'} inRange=${bestCheck.inRange}`)
 
     return c.json({
       success: true,
@@ -578,6 +650,9 @@ app.post('/api/generate-concept', async (c) => {
         titleLengths: bestCheck.titleLengths,  // 検証用: 3案の字数
         titleIndex: bestCheck.titleIndex,      // 検証用: 選ばれた案の番号（1始まり）
         titles: best.titles,                   // 検証用: 3案の全文
+        titleExclusions: bestCheck.titleReasons, // 検証用: 各案の除外理由（seasonTime / place / latin。空配列は除外なし）
+        bannedWords: bestCheck.bannedWords,    // 検証用: 文章に含まれていた回答にない禁止語
+        retryReasons: retried ? retryReasons : [], // 検証用: 再生成した理由（1回目に範囲外だった項目）
         textLength: bestCheck.textLength,
         paragraphs: bestCheck.paragraphs,
         retried,
