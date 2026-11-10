@@ -442,6 +442,132 @@ async function refinePrompt(draftPrompt) {
 }
 
 /* ================================================
+   コンセプト（タイトル・文章）— セット6のみ
+   window.__IMAGE_SET__.conceptEnabled が true のセットだけ動作する。
+   セット1〜5では isConceptEnabled() が false のため、以下はすべて何もしない。
+   画像生成とは並行で /api/generate-concept を呼び、画像の生成・表示は待たせない。
+================================================ */
+let conceptRequestId = 0;   // リクエスト世代。リセット後に古い応答が来ても破棄するために使う
+let conceptState = null;    // { key, status: 'pending'|'done'|'error', title, text }
+
+function isConceptEnabled() {
+  return !!(window.__IMAGE_SET__ && window.__IMAGE_SET__.conceptEnabled === true);
+}
+
+// コンセプト欄（#concept-box）を生成画像のすぐ下・ボタンの上に作る。
+// 画像が表示されるまでは非表示（画像生成が失敗したとき、空の結果欄の下に出さないため）
+function ensureConceptBox() {
+  let box = document.getElementById('concept-box');
+  if (!box) {
+    box = document.createElement('section');
+    box.id = 'concept-box';
+    box.className = 'concept-box';
+    box.setAttribute('aria-live', 'polite');
+    box.setAttribute('aria-label', 'コンセプト');
+    box.style.display = 'none';
+    resultActions.insertAdjacentElement('beforebegin', box);
+  }
+  return box;
+}
+
+// conceptState の内容を #concept-box に描画する（textContent のみ使用）
+function renderConcept() {
+  const box = document.getElementById('concept-box');
+  if (!box || !conceptState) return;
+  box.textContent = '';
+  if (conceptState.status === 'pending') {
+    const p = document.createElement('p');
+    p.className = 'concept-box__status';
+    p.textContent = 'コンセプトを作成中…';
+    box.appendChild(p);
+  } else if (conceptState.status === 'error') {
+    const p = document.createElement('p');
+    p.className = 'concept-box__status';
+    p.textContent = 'コンセプトを作成できませんでした';
+    box.appendChild(p);
+  } else {
+    const h = document.createElement('h3');
+    h.className = 'concept-box__title';
+    h.textContent = conceptState.title;
+    box.appendChild(h);
+    String(conceptState.text).split(/\n+/).forEach((para) => {
+      if (!para.trim()) return;
+      const p = document.createElement('p');
+      p.className = 'concept-box__text';
+      p.textContent = para.trim();
+      box.appendChild(p);
+    });
+  }
+}
+
+// 画像の表示と同時にコンセプト欄を見せる（コンセプト欄がなければ何もしない）
+function revealConcept() {
+  const box = document.getElementById('concept-box');
+  if (box) box.style.display = 'block';
+}
+
+// コンセプト欄を消して状態を初期化（進行中のリクエストの応答も無効化）
+function resetConcept() {
+  conceptRequestId++;
+  conceptState = null;
+  const box = document.getElementById('concept-box');
+  if (box) box.remove();
+}
+
+// generateImage の開始時に呼ぶ（await しない）。この関数自体は例外を投げない
+function requestConcept() {
+  if (!isConceptEnabled()) return;
+  try {
+    const snapshot = Object.assign({}, answers);
+    const key = JSON.stringify(snapshot);
+
+    // 同じ回答で成功済み・作成中なら再リクエストしない（「同じ回答で生成する」での再試行時）
+    if (conceptState && conceptState.key === key &&
+        (conceptState.status === 'done' || conceptState.status === 'pending')) {
+      ensureConceptBox();
+      renderConcept();
+      return;
+    }
+
+    const myId = ++conceptRequestId;
+    conceptState = { key: key, status: 'pending' };
+    ensureConceptBox();
+    renderConcept();
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+
+    fetch('/api/generate-concept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ setId: (window.__IMAGE_SET__ && window.__IMAGE_SET__.setId) || 4, answers: snapshot }),
+      signal: controller.signal,
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (myId !== conceptRequestId) return; // リセット済み・再リクエスト済み → 破棄
+        if (data && data.success && typeof data.title === 'string' && typeof data.text === 'string') {
+          conceptState = { key: key, status: 'done', title: data.title, text: data.text };
+          console.log('[concept] meta:', data.meta);
+        } else {
+          console.warn('[concept] failed:', data && data.error);
+          conceptState = { key: key, status: 'error' };
+        }
+        renderConcept();
+      })
+      .catch((err) => {
+        if (myId !== conceptRequestId) return;
+        console.warn('[concept] request error:', err);
+        conceptState = { key: key, status: 'error' };
+        renderConcept();
+      })
+      .finally(() => clearTimeout(timer));
+  } catch (err) {
+    console.warn('[concept] unexpected error:', err);
+  }
+}
+
+/* ================================================
    generateImage()
    プロンプト最適化 → fal.ai への投入・ポーリング・結果取得
 ================================================ */
@@ -456,6 +582,9 @@ async function generateImage() {
   isGenerating = true;
 
   try {
+    // ---- コンセプト（セット6のみ。画像生成とは並行・await しない。他セットでは何もしない） ----
+    requestConcept();
+
     // ---- Phase 1: プロンプト最適化（既存のまま） ----
     const draftPrompt = buildPrompt(answers);
 
@@ -662,8 +791,12 @@ async function displayResult(imageUrl) {
     resultImageWrapper.insertAdjacentElement('afterend', note);
   }
 
-  // 結果エリアを画面内にスクロール
+  // 結果エリアを画面内にスクロール（従来のまま。この時点ではコンセプト欄は非表示なので、レイアウトは従来と同一）
   resultActions.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+  // コンセプト欄（セット6のみ存在）は、スクロール位置を決めた後に表示する。
+  // 欄は画像より下に入るため、画像の見える位置は変わらない（ボタンだけが下に下がる）
+  revealConcept();
 }
 
 /* ================================================
@@ -897,6 +1030,9 @@ function resetChat() {
   // ---- result-note を削除 ----
   const resultNote = document.getElementById('result-note');
   if (resultNote) resultNote.remove();
+
+  // ---- コンセプト欄を削除（セット6のみ存在。進行中のリクエストの応答も破棄） ----
+  resetConcept();
 
   // ---- 生成結果セクションを非表示 ----
   resultSection.style.display = 'none';

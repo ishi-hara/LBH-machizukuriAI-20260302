@@ -42,6 +42,7 @@ webapp/
 | エンドポイント | メソッド | 説明 |
 |---|---|---|
 | `/api/refine-prompt` | POST | 日本語プロンプト → 英語最適化 (GPT-4.1-mini) |
+| `/api/generate-concept` | POST | コンセプトのタイトル・文章を生成 (GPT-4.1-mini)。`conceptEnabled` のセット（セット6）のみ。他のセットは 403 |
 | `/api/generate-submit` | POST | fal.ai にジョブ投入、requestId 返却 |
 | `/api/generate-status?id=` | GET | ジョブステータス取得 |
 | `/api/generate-result?id=` | GET | 生成画像 URL 取得 |
@@ -114,6 +115,7 @@ Q2〜Q6 の回答がこれらを含む場合、その行は日本語ドラフト
 | `compositeTimeOfDaySkip` | string[]（任意） | 「季節・時間帯:」の行に限ってスキップ判定に加える語。セット6は 朝・早朝・朝方・雨・曇り・雪。他の行（例:「朝市」「雨宿り」）では判定しない |
 | `systemPromptRuleOverrides` | object（任意） | systemPrompt のルール 1 / 2 / 3 / 4 / 8 / 9 / 10 / 12 / 13 / 14 のセット別本文。未指定のルールは全セット共通の文言。セット6のみ指定。主な内容: 空・光を時間帯に合わせて変える（ルール10）、定型句はサーバーが付けるので LLM に書かせない（ルール1・2・4）、様式の形容詞と屋外の場所名を書かせない（ルール12）、LLM が書く中間部分は66語以内で時間帯・空・光を先に置く（ルール14）。英語の見本文は置かず、日本語の指示で書く（詳細は「セット6の仕様」） |
 | `timeOfDayNote` | string（任意） | `buildPrompt()` が「季節・時間帯:」行の直後に追加する1行。セット6のみ。日本語ドラフトに入るため、判定語（夜・夕方・雨・星 等）を含めないこと |
+| `conceptEnabled` / `conceptPlace` | boolean / string（任意） | `conceptEnabled: true` のセットだけ、コンセプト（タイトル・文章）を生成して生成画像の下に表示する。未指定は false 扱い。`conceptPlace` は文章で場所に触れるときの表記（セット6は `池田のサカエマチ2番街`）。セット6のみ指定 |
 | `promptPrefix` / `promptSuffix` | string（任意） | `/api/refine-prompt` が返す英語プロンプトの先頭・末尾に、サーバー側で連結する固定文。セット6のみ（prefix 約115語・suffix 約90語）。内容は構造ロック（同一カメラ・看板の大きさと位置・透明な屋根と支柱の保持）、看板の面に何も重ねない、店舗に文字を描かない、写実の指定。LLM には中間部分だけを書かせる。未指定のセット1〜5は連結せず従来どおり |
 
 ### maskMode による挙動の違い
@@ -167,7 +169,7 @@ y >= fadeEnd              → 生成画像 100%
 <script src="/static/app.js"></script>
 ```
 
-セット6では、上記に加えて任意項目 `compositeIgnoreSkip` / `compositeTimeOfDaySkip` / `timeOfDayNote` が出力される（定義があるセットのみ。セット1〜5には出力されない）。`setId` は `?set=` の解決結果で、`app.js` が `/api/refine-prompt` と `/api/generate-submit` に送る。
+セット6では、上記に加えて任意項目 `compositeIgnoreSkip` / `compositeTimeOfDaySkip` / `timeOfDayNote` / `conceptEnabled: true` が出力される（定義があるセットのみ。セット1〜5には出力されない）。`setId` は `?set=` の解決結果で、`app.js` が `/api/refine-prompt` と `/api/generate-submit` に送る。
 
 画像URLの基点は、アクセス元が `machizukuri-ai.pages.dev` またはそのサブドメイン（プレビュー）で https の場合はそのオリジン、それ以外は本番URLになる（`resolveImageBaseUrl`）。プレビューでは、そのプレビュー自身の画像を fal.ai に渡す。
 
@@ -235,6 +237,26 @@ promptPrefix（約115語・固定）+ LLMが書く中間部分（66語以内）+
 3. ビルド後、プレビュー（別ブランチ名）にだけデプロイし、`/api/refine-prompt` を1パターン1回ずつ確認する（春の昼間・夏の夕暮れ・冬の夜＋花火・冬の朝）。空の演出は回答にある場合だけ出ること、看板の上と左右の外側の空に限定されることを見る。LLMは非決定的なため、問題が出やすいパターンは複数回確認する
 4. 画像生成の結果は、プレビューの `?set=6` で人が確認する
 
+## コンセプト（タイトル・文章）の生成（セット6のみ）
+6問の回答から、プレゼンシート用の「コンセプトタイトル」と「コンセプト文章」を作り、生成画像のすぐ下（ダウンロード/やり直しボタンの上）に表示する。
+
+- **対象**: `IMAGE_SETS[n].conceptEnabled === true` のセット（セット6のみ）。セット1〜5は HTML・`app.js` の動作・既存APIの応答が変わらない（`__IMAGE_SET__` に `conceptEnabled` が出力されず、`app.js` の `isConceptEnabled()` が false のため何もしない）
+- **API**: `POST /api/generate-concept`　入力 `{ setId, answers: { facilityType, usageScene, style, surroundings, timeOfDay, additionalNotes } }`
+  - 成功: `{ success: true, title, text, meta: { titleLength, textLength, paragraphs, retried, inRange } }`
+  - `setId` が 1〜6 以外・コンセプト非対応のセットは **403**（OpenAI を呼ばない。`?set=` の既定にはフォールバックしない）。JSON不正・answers 欠落は 400、キー未設定は 500、上流エラー・出力不正は 502
+- **モデル**: gpt-4.1-mini（`OPENAI_API_KEY`）、`response_format: json_object`、初回 temperature 0.7・再生成 0.5
+- **出力の条件**: タイトル 15〜20字（句読点込み）、文章 150〜200字（改行を除く）・3〜4段落・敬体。場所は「池田のサカエマチ2番街」と書き、商店街であることは文中で自然に表す。回答にない事実・英語・他地域名は入れない
+- **検査と再生成**: 文字数は `Array.from(str).length`（文章は空白・改行を除く）。文字数の範囲外・英字2文字以上の混入・「川西」を含む場合は、前回の出力と実際の文字数を伝えて **1回だけ** 再生成する。再生成後も範囲外なら、範囲に近いほうをそのまま返し、`console.log` に文字数を残す（画面は止めない）。JSON不正・項目欠落は失敗扱い
+- **「特になし」の扱い**: 10字以下で、なし/ない/なんでも/特に/とくに/任せ を含む回答だけ「指定なし」として渡す（長い回答は誤判定しない）
+- **systemPrompt に例文は入れない**（LLM が言い回しをそのまま写すため）。段落ごとの文字数の目安と、タイトルの作り方の手順で指示する。検証で再生成後も範囲外が半数以上なら、検証用と別の例を1つだけ足す案がある
+- **画面（`app.js`）**:
+  - `generateImage()` の開始時に `requestConcept()` を await せずに呼ぶ（画像の生成・表示は待たせない）
+  - `#concept-box` は `#resultActions` の直前に動的に挿入し、画像の表示と同時に見せる。作成中は「コンセプトを作成中…」、失敗・タイムアウト（60秒）は「コンセプトを作成できませんでした」の1行のみ
+  - 表示は `textContent` のみ。`displayResult()` のスクロールは、コンセプト欄がある場合も従来と同じ画像の見える位置（ボタン下端が画面下端になる位置）に合わせる
+  - 「同じ回答で生成する」の再試行では、同じ回答で作成済み・作成中ならコンセプトを再リクエストしない
+  - `resetChat()` で `#concept-box` を削除し、進行中のリクエストの応答は破棄する（世代番号 `conceptRequestId`）
+- **変更時の確認**: セット1〜5で `/api/generate-concept` が呼ばれず `#concept-box` が出ないこと、setId 1〜5・不正値で 403 になることを確認してから本番に出す
+
 ## データフロー
 ```
 ユーザー入力 (6問)
@@ -247,6 +269,7 @@ promptPrefix（約115語・固定）+ LLMが書く中間部分（66語以内）+
   → GET /api/generate-result → imageUrl
   → compositeWithOriginal() → Canvas合成 → blob URL
   → displayResult() → タブUI表示・ダウンロード有効化
+（セット6のみ: generateImage() の開始時に POST /api/generate-concept を並行で呼び、画像の下にコンセプトを表示）
 ```
 
 ## 使い方
