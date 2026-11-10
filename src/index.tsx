@@ -309,8 +309,12 @@ const buildConceptSystemPrompt = (place: string): string => [
   '1. 「施設」「雰囲気」「環境」から、特徴的な要素（色・動き・素材・時間帯など）を2〜3個取り出します。',
   '2. 「季節時間帯」から、感覚的な要素（光・音・空気・温度など）を1個選びます。',
   '3. 「ペルソナ」から、人の感情を表す言葉を1個選びます。',
-  '4. それらを組み合わせ、15〜20字の1つの題にまとめます。',
-  '・句読点や記号も1字として数えます。',
+  '4. それらを組み合わせ、15〜20字の題にまとめます。タイトルは、切り口の違う3案を作ります。',
+  '・3案は、それぞれ違う切り口にします（たとえば、光や空気などの情景から / 人の気持ちから / 比喩や擬人化から）。',
+  '・各案は15〜20字、目標は17字前後です。句読点や記号も1字として数えます。',
+  '・自然な日本語にします。「冬朝」「夏夕暮れ」のような、一般的でない造語は使いません（「冬の朝」「夏の夕暮れ」「朝陽」「夕映え」などはかまいません）。',
+  '・回答の言葉を「AとBで◯◯する喜び」のように並べるだけにしません。情景が浮かぶ短い題にします。',
+  '・タイトルには地名（池田、サカエマチ2番街）を入れません。',
   '・比喩や擬人化を使ってかまいません。',
   '・体言止めや、短い詩のような言い回しにします。',
   '・「季節時間帯」が指定なしのときは、季節や時間帯を決めつけません。',
@@ -332,6 +336,8 @@ const buildConceptSystemPrompt = (place: string): string => [
   '【守ること】',
   '・回答にない事実（歴史、人口、来訪者数、実在の店名・施設名、数値、イベント名）をつくりません。',
   '・回答に書かれた要素を中心に、言葉をふくらませます。回答に出てこない具体物を足しません。',
+  '・施設から連想される品物・音楽・催しなど、回答にない具体物を足しません（たとえばマルシェでも、「新鮮な食材」「手作り品」「音楽」は、回答にない限り書きません）。様子は、光・空気・人の気持ちなどで表します。',
+  '・今の商店街の実態（「日々の暮らしを支える」など）を断定しません。これから生まれる場所として書きます。',
   '・「その他指定」は、書かれているときだけ自然に織り込みます。',
   '・参加者の言葉をそのまま並べず、読み手の心に残る言い回しに整えます。',
   '・英語の店名、英文、アルファベット表記は使いません。「サカエマチ2番街」のカタカナと数字はそのまま使えます。',
@@ -340,9 +346,10 @@ const buildConceptSystemPrompt = (place: string): string => [
   '',
   '【出力形式】',
   '次のJSONオブジェクトだけを出力します。前置き、説明、コードブロック、文字数の表記は付けません。',
-  '{"title": "コンセプトタイトル", "text": "コンセプト文章"}',
+  '{"titles": ["タイトル案1", "タイトル案2", "タイトル案3"], "text": "コンセプト文章"}',
+  'titles は、切り口の違う3つの案を、この順に並べます。',
   'text の段落の区切りは、JSONの文字列の中で \\n\\n と書きます。',
-  '出力する前に、title が15〜20字、text が150〜200字（改行を除く）になっているかを数え、範囲外なら書き直してから出力します。',
+  '出力する前に、titles の各案が15〜20字（目標は17字前後）、text が150〜200字（改行を除く）になっているかを数え、範囲外なら書き直してから出力します。',
 ].join('\n')
 
 // 6問の回答 → ユーザーメッセージ。空・「特になし」系（10字以下のみ判定）は「指定なし」にする
@@ -361,13 +368,19 @@ const buildConceptUserMessage = (a: Record<string, unknown>): string => {
     `季節時間帯: ${pick(a.timeOfDay)}`,
     `その他指定: ${pick(a.additionalNotes)}`,
     '',
-    '上の内容から、タイトルと文章をJSONで作ってください。',
+    '上の内容から、タイトル3案と文章をJSONで作ってください。',
   ].join('\n')
 }
 
-type ConceptDraft = { title: string; text: string; raw: string }
+const CONCEPT_TITLE_TARGET = 17  // タイトルの目標字数。範囲内の案がないときは、これに最も近い案を選ぶ
+
+type ConceptDraft = { titles: string[]; text: string; raw: string }
 type ConceptCheck = {
-  titleLength: number
+  title: string          // 選ばれたタイトル
+  titleIndex: number     // 選ばれた案の番号（1始まり）
+  titleLengths: number[] // 各案の字数
+  titleLength: number    // 選ばれたタイトルの字数
+  titleInRange: boolean  // 範囲内の案があったか
   textLength: number
   paragraphs: number
   hasLatin: boolean
@@ -376,46 +389,74 @@ type ConceptCheck = {
   distance: number  // 範囲からの外れ量の合計（小さいほど良い）
 }
 
-// モデルの出力（JSON文字列）を検証して {title, text} にする。不正なら null
+// モデルの出力（JSON文字列）を検証して {titles, text} にする。不正なら null
 const parseConceptJson = (content: string): ConceptDraft | null => {
   let s = (content ?? '').trim()
   s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
   try {
-    const o = JSON.parse(s) as { title?: unknown; text?: unknown }
-    if (typeof o.title !== 'string' || typeof o.text !== 'string') return null
-    const title = o.title.replace(/\s+/g, ' ').trim()
-    const text  = o.text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
-    if (!title || !text) return null
-    return { title, text, raw: s }
+    const o = JSON.parse(s) as { titles?: unknown; text?: unknown }
+    if (!Array.isArray(o.titles) || typeof o.text !== 'string') return null
+    const titles = o.titles
+      .filter((t): t is string => typeof t === 'string')
+      .map((t) => t.replace(/\s+/g, ' ').trim())
+      .filter((t) => t)
+      .slice(0, 3)
+    const text = o.text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+    if (titles.length === 0 || !text) return null
+    return { titles, text, raw: s }
   } catch {
     return null
   }
 }
 
+// 3案のうち、15〜20字に入っている最初の案を選ぶ。どれも入らなければ17字に最も近い案（同じ近さなら先の案）
+const pickConceptTitleIndex = (lengths: number[]): number => {
+  const inIdx = lengths.findIndex((n) => n >= CONCEPT_TITLE_MIN && n <= CONCEPT_TITLE_MAX)
+  if (inIdx >= 0) return inIdx
+  let best = 0
+  lengths.forEach((n, i) => {
+    if (Math.abs(n - CONCEPT_TITLE_TARGET) < Math.abs(lengths[best] - CONCEPT_TITLE_TARGET)) best = i
+  })
+  return best
+}
+
 const checkConcept = (d: ConceptDraft): ConceptCheck => {
-  const titleLength = conceptCount(d.title)
-  const textLength  = conceptTextCount(d.text)
-  const paragraphs  = d.text.split(/\n+/).filter((p) => p.trim()).length
-  const hasLatin    = /[A-Za-zＡ-Ｚａ-ｚ]{2,}/.test(d.title + d.text)
-  const hasKawanishi = /川西/.test(d.title + d.text)
+  const titleLengths = d.titles.map(conceptCount)
+  const idx          = pickConceptTitleIndex(titleLengths)
+  const title        = d.titles[idx]
+  const titleLength  = titleLengths[idx]
+  const titleInRange = titleLength >= CONCEPT_TITLE_MIN && titleLength <= CONCEPT_TITLE_MAX
+  const textLength   = conceptTextCount(d.text)
+  const paragraphs   = d.text.split(/\n+/).filter((p) => p.trim()).length
+  // 英字・「川西」は、選ばれたタイトルと文章を検査する
+  const hasLatin     = /[A-Za-zＡ-Ｚａ-ｚ]{2,}/.test(title + d.text)
+  const hasKawanishi = /川西/.test(title + d.text)
   const out = (n: number, lo: number, hi: number) => (n < lo ? lo - n : n > hi ? n - hi : 0)
   const distance = out(titleLength, CONCEPT_TITLE_MIN, CONCEPT_TITLE_MAX) + out(textLength, CONCEPT_TEXT_MIN, CONCEPT_TEXT_MAX)
   return {
-    titleLength, textLength, paragraphs, hasLatin, hasKawanishi,
+    title, titleIndex: idx + 1, titleLengths, titleLength, titleInRange,
+    textLength, paragraphs, hasLatin, hasKawanishi,
     inRange: distance === 0 && !hasLatin && !hasKawanishi,
     distance: distance + (hasLatin ? 5 : 0) + (hasKawanishi ? 5 : 0),
   }
 }
 
-// 再生成用の指示文（前回の実際の文字数と、直し方を具体的に伝える）
+// 再生成用の指示文（前回の実際の字数と、直し方の具体的な量を伝える）
 const buildConceptFeedback = (ck: ConceptCheck): string => {
-  const parts: string[] = [`前回の出力は、タイトル${ck.titleLength}字、文章${ck.textLength}字（改行を除く）でした。`]
+  const parts: string[] = [`前回の出力は、タイトル案が${ck.titleLengths.join('字・')}字、文章${ck.textLength}字（改行を除く）でした。`]
   if (ck.hasLatin) parts.push('英字（アルファベット）を含んでいました。')
   if (ck.hasKawanishi) parts.push('「川西」を含んでいました。')
-  parts.push('タイトルを15〜20字、文章を150〜200字に直してください。')
+  parts.push('タイトル案は各案15〜20字、文章は150〜200字に直してください。')
+  if (!ck.titleInRange) {
+    // 範囲内の案がなかった場合: 17字に最も近い案を基準に、増減の量を具体的に伝える
+    const diff = Math.abs(CONCEPT_TITLE_TARGET - ck.titleLength)
+    parts.push(ck.titleLength < CONCEPT_TITLE_MIN
+      ? `タイトルは、どの案もあと${diff}字ほど増やし、17字前後にしてください。`
+      : `タイトルは、どの案も${diff}字ほど減らし、17字前後にしてください。`)
+  }
   if (ck.textLength < CONCEPT_TEXT_MIN) parts.push(`文章はあと約${CONCEPT_TEXT_MIN + 25 - ck.textLength}字増やしてください。`)
   else if (ck.textLength > CONCEPT_TEXT_MAX) parts.push(`文章は約${ck.textLength - (CONCEPT_TEXT_MAX - 25)}字減らしてください。`)
-  parts.push('同じJSON形式だけを出力してください。')
+  parts.push('同じJSON形式（titles に3案、text に文章）だけを出力してください。')
   return parts.join('')
 }
 
@@ -463,7 +504,7 @@ app.post('/api/generate-concept', async (c) => {
       body: JSON.stringify({
         model: 'gpt-4.1-mini',
         temperature,
-        max_tokens: 700,
+        max_tokens: 900,
         response_format: { type: 'json_object' },
         messages,
       }),
@@ -499,7 +540,7 @@ app.post('/api/generate-concept', async (c) => {
       retried = true
       const feedback = (draft1 && check1)
         ? buildConceptFeedback(check1)
-        : '前回の出力はJSONとして読めませんでした。{"title": "...", "text": "..."} の形式だけを出力してください。'
+        : '前回の出力はJSONとして読めませんでした。{"titles": ["...", "...", "..."], "text": "..."} の形式だけを出力してください。'
       const retryMessages: Msg[] = [
         ...baseMessages,
         { role: 'assistant', content: first.content },
@@ -526,14 +567,17 @@ app.post('/api/generate-concept', async (c) => {
     }
 
     // 範囲外のまま返す場合もブロックせず、文字数を記録する
-    console.log(`[concept] set=${setId} title=${bestCheck.titleLength} text=${bestCheck.textLength} paragraphs=${bestCheck.paragraphs} latin=${bestCheck.hasLatin} kawanishi=${bestCheck.hasKawanishi} retried=${retried} inRange=${bestCheck.inRange}`)
+    console.log(`[concept] set=${setId} titles=${bestCheck.titleLengths.join('/')} pick=${bestCheck.titleIndex} text=${bestCheck.textLength} paragraphs=${bestCheck.paragraphs} latin=${bestCheck.hasLatin} kawanishi=${bestCheck.hasKawanishi} retried=${retried} inRange=${bestCheck.inRange}`)
 
     return c.json({
       success: true,
-      title: best.title,
+      title: bestCheck.title,
       text: best.text,
       meta: {
         titleLength: bestCheck.titleLength,
+        titleLengths: bestCheck.titleLengths,  // 検証用: 3案の字数
+        titleIndex: bestCheck.titleIndex,      // 検証用: 選ばれた案の番号（1始まり）
+        titles: best.titles,                   // 検証用: 3案の全文
         textLength: bestCheck.textLength,
         paragraphs: bestCheck.paragraphs,
         retried,
