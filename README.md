@@ -17,7 +17,7 @@
 - **本番**: https://machizukuri-ai.pages.dev/
 - **サンドボックス**: http://localhost:3000
 - **プレビュー**: 本番以外のブランチ名でデプロイすると `https://<ブランチ名>.machizukuri-ai.pages.dev` で確認できる（例: `set6-test`）。本番には影響しない
-- **画像セットの指定**: `?set=N`（N=1〜6）。パラメータなしの既定はセット4（`config/image-set.json`）。例: `https://machizukuri-ai.pages.dev/?set=6`
+- **画像セットの指定**: `?set=N`（N=1〜7）。パラメータなしの既定はセット4（`config/image-set.json`）。例: `https://machizukuri-ai.pages.dev/?set=6`
 
 ## ファイル構成
 ```
@@ -75,10 +75,10 @@ Q1 は初期メッセージとして表示済みのため、`sendMessage()` の�
 Q2〜Q6 の回答がこれらを含む場合、その行は日本語ドラフトから省略される。
 
 ## 画像セットの切り替え
-元画像・マスク画像・プロンプト文言・合成パラメータはセット単位で管理される。既定のセットは `config/image-set.json` の `IMAGE_SET_ID` で決まり、URLクエリ `?set=N`（N=1〜6）で URL ごとに切り替えることもできる。
+元画像・マスク画像・プロンプト文言・合成パラメータはセット単位で管理される。既定のセットは `config/image-set.json` の `IMAGE_SET_ID` で決まり、URLクエリ `?set=N`（N=1〜7）で URL ごとに切り替えることもできる。
 
 ```typescript
-// config/image-set.json（1〜6 のいずれかを設定。変更後は npm run build）
+// config/image-set.json（1〜7 のいずれかを設定。変更後は npm run build）
 { "IMAGE_SET_ID": 4 }
 ```
 
@@ -90,9 +90,10 @@ Q2〜Q6 の回答がこれらを含む場合、その行は日本語ドラフト
 | 4 | キセラ川西せせらぎ公園 | 004-motogazou-kisera-1700x956.jpg | 004-motogazou-kisera-1700x956.jpg | `none` |
 | 5 | 川西能勢口駅南口（ペデストリアンデッキ） | 005-motogazou-noseguchiminamiguchi.jpg | 005-mask-noseguchiminamiguchi-2.png | `white`（`compositeEnabled: false`） |
 | 6 | 池田市・ショッピングシティ サカエマチ2番街（アーケード入口） | 006-motogazou-ikedasakaemachi2.jpg（775×620、5:4） | 006-motogazou-ikedasakaemachi2.jpg | `none` |
+| 7 | 川西の2階建て店舗（前の駐車場） | 007-motogazou-store.jpg（1024×576、16:9） | 007-motogazou-store.jpg | `none`（`compositeEnabled: false`） |
 
-- `config/image-set.json` の `IMAGE_SET_ID` が 1〜6 以外の場合はセット1にフォールバックする
-- URLクエリ `?set=` が 1〜6 以外（未指定・`abc`・`7` など）の場合は、`config/image-set.json` の `IMAGE_SET_ID`（現在は 4）になる。本番でも `?set=6` でセット6が開くが、パラメータなしの既定はセット4のまま
+- `config/image-set.json` の `IMAGE_SET_ID` が 1〜7 以外の場合はセット1にフォールバックする
+- URLクエリ `?set=` が 1〜7 以外（未指定・`abc`・`8` など）の場合は、`config/image-set.json` の `IMAGE_SET_ID`（現在は 4）になる。本番でも `?set=6`・`?set=7` でそれぞれのセットが開くが、パラメータなしの既定はセット4のまま
 - `app.js` が API に送る `setId` は `window.__IMAGE_SET__.setId` で、未取得時のフォールバックは 4
 - 変更後は `npm run build` でリビルドし、デプロイすること
 - `public/static/images/` には未使用の `003-white01.jpg` / `003-white02.jpg` / `004-white01.jpg` 等が残っているが、現行コードからは参照していない
@@ -237,13 +238,31 @@ promptPrefix（約115語・固定）+ LLMが書く中間部分（66語以内）+
 3. ビルド後、プレビュー（別ブランチ名）にだけデプロイし、`/api/refine-prompt` を1パターン1回ずつ確認する（春の昼間・夏の夕暮れ・冬の夜＋花火・冬の朝）。空の演出は回答にある場合だけ出ること、看板の上と左右の外側の空に限定されることを見る。LLMは非決定的なため、問題が出やすいパターンは複数回確認する
 4. 画像生成の結果は、プレビューの `?set=6` で人が確認する
 
-## コンセプト（タイトル・文章）の生成（セット6のみ）
+## セット7（川西の店舗前）の仕様
+2階建て店舗（瓦屋根・ピンクの外壁）の前の駐車場を、6問の回答に沿った新しい空間に作り替える。セット6と同じく、日本語の指示と固定文（`promptPrefix` / `promptSuffix`）で構成する。
+
+- **画像**: `007-motogazou-store.jpg`（元は1024×578。上下1pxずつを切り落として1024×576、JPEG 品質95・4:4:4。拡大なし）。`original` と `mask` に同じファイルを指定する
+- **設定**: `maskMode: 'none'`、`compositeEnabled: false`（貼り戻し合成なし）、`aspectRatio: '16:9'`、`conceptEnabled: true`、`conceptPlace: '川西の店舗前'`、`conceptTheme: 'store'`
+- **`maskAreaLabel`**: 「店舗前の駐車場のエリア」（`shouldSkipComposite` の判定語を含まない）
+- **作り替える範囲**: 手前の駐車場（アスファルト）。上の置物・小物（動物の置物、コーン類など）は撤去・作り替えてよい。英語プロンプトには置物の名前を書かせない
+- **店舗**: 取り壊さず、形・色・位置・大きさを変えない。手前の物の後ろに元のまま建つように描く。手前の物が重なって店舗の一部または大部分が隠れてもよい（生成物の大きさに上限なし）
+- **残すもの**: 手前の歩道、左右のレンガ塀とポスター（固定文で保持。塀・歩道の前には新しい物を置かない）。隣の建物・木・空・山は、新しい物に隠れない部分だけ元のまま
+- **空と光**: 季節・時間帯・天候が指定されたときは、空の色と全体の光だけ変えてよい（形・位置は変えない）。指定がなければ元と同じ昼間
+- **文字**: 新しい文字・ロゴ・店名は描かない（元のポスターの既存の文字は元のまま）
+- **上端**: 生成物の上端を水平に切り落とさず、木の枝先や屋根まで全体を描く。足元は駐車場の地面に自然に接する
+- **公園・広場**: セット6にある「公園・広場などの語を場所の名前として書かない」制約は、セット7では置かない（駐車場を広場や庭に作り替えてよい）。様式の形容詞（レトロ・和風 など）の禁止は残す
+- **英語の呼び名**: `maskAreaDetail` で「the parking lot in front of the store」と呼ぶよう指示している（英語の見本文は置かない）
+- **共通ドラフトとの食い違い**: `app.js` の `buildPrompt()` は「建物…その他すべての建築要素は元の画像のまま保持する」を必ず入れる（変更不可）。「店舗が覆われてもよい」とはルール8・9・固定文で打ち消している。効かない場合は画像で確認して調整する
+- **限界**: マスクなし・合成なしのため、保持は固定文だけで担保する。全面が再生成されるので、ポスターの細かい文字がぼやける可能性がある
+- **既存動作への影響**: `?set=7` と setId 7 は、これまで既定（セット4）へのフォールバック／`/api/generate-concept` では 403 だった。セット7の追加後は、セット7として動く
+
+## コンセプト（タイトル・文章）の生成（セット6・7）
 6問の回答から、プレゼンシート用の「コンセプトタイトル」と「コンセプト文章」を作り、生成画像のすぐ下（ダウンロード/やり直しボタンの上）に表示する。
 
-- **対象**: `IMAGE_SETS[n].conceptEnabled === true` のセット（セット6のみ）。セット1〜5は HTML・`app.js` の動作・既存APIの応答が変わらない（`__IMAGE_SET__` に `conceptEnabled` が出力されず、`app.js` の `isConceptEnabled()` が false のため何もしない）
+- **対象**: `IMAGE_SETS[n].conceptEnabled === true` のセット（セット6・7）。セット1〜5は HTML・`app.js` の動作・既存APIの応答が変わらない（`__IMAGE_SET__` に `conceptEnabled` が出力されず、`app.js` の `isConceptEnabled()` が false のため何もしない）
 - **API**: `POST /api/generate-concept`　入力 `{ setId, answers: { facilityType, usageScene, style, surroundings, timeOfDay, additionalNotes } }`
   - 成功: `{ success: true, title, text, meta: { titleLength, titleLengths, titleIndex, titles, textLength, paragraphs, retried, inRange } }`（画面が使うのは `title` / `text` のみ。`meta` の `titleLengths`（3案の字数）・`titleIndex`（選ばれた案の番号、1始まり）・`titles`（3案の全文）・`titleExclusions`（各案の除外理由）・`bannedWords`・`retryReasons` は検証用）
-  - `setId` が 1〜6 以外・コンセプト非対応のセットは **403**（OpenAI を呼ばない。`?set=` の既定にはフォールバックしない）。JSON不正・answers 欠落は 400、キー未設定は 500、上流エラー・出力不正は 502
+  - `setId` が 1〜7 以外・コンセプト非対応のセットは **403**（OpenAI を呼ばない。`?set=` の既定にはフォールバックしない）。JSON不正・answers 欠落は 400、キー未設定は 500、上流エラー・出力不正は 502
 - **モデル**: 定数 `CONCEPT_MODEL`（**`gpt-4.1`**、`OPENAI_API_KEY`）、`response_format: json_object`、初回 temperature 0.7・再生成 0.5、`max_tokens` 900。`/api/refine-prompt` のモデル（gpt-4.1-mini）とは別に管理する。比較（4パターン×2モデル）の結果、字数の安定性と応答時間から gpt-4.1 を採用
 - **出力の条件**: モデルは `{"titles": ["案1","案2","案3"], "text": "..."}` を返す。タイトルは切り口の違う3案で、各案 15〜20字（目標17字前後・句読点込み）。文章は 150〜200字（改行を除く）・3〜4段落・敬体。場所は「池田のサカエマチ2番街」と書き、商店街であることは文中で自然に表す。回答にない事実・英語・他地域名は入れない
   - タイトルの質: 自然な日本語にし、「冬朝」「夏夕暮れ」のような一般的でない造語を使わない（「冬の朝」「朝陽」「夕映え」などはよい）。回答の言葉を並べるだけにしない。タイトルに地名（池田、サカエマチ2番街）を入れない
@@ -261,6 +280,9 @@ promptPrefix（約115語・固定）+ LLMが書く中間部分（66語以内）+
   - 表示は `textContent` のみ。`displayResult()` のスクロールは、コンセプト欄がある場合も従来と同じ画像の見える位置（ボタン下端が画面下端になる位置）に合わせる
   - 「同じ回答で生成する」の再試行では、同じ回答で作成済み・作成中ならコンセプトを再リクエストしない
   - `resetChat()` で `#concept-box` を削除し、進行中のリクエストの応答は破棄する（世代番号 `conceptRequestId`）
+- **セットごとの出し分け（`conceptTheme`）**: systemPrompt の舞台・場所の言い方・地名の扱いは `CONCEPT_THEMES`（`arcade` = セット6、`store` = セット7）で切り替える。セット6（`arcade`）の systemPrompt と検査は従来のまま（基準とバイト一致を確認済み）。
+  - セット7（`store`）: 舞台は「川西にある店舗の前の駐車場」、場所の表記は `conceptPlace: '川西の店舗前'`。「商店街」「アーケード」の語は **systemPrompt の文面で避けるよう指示するだけ**で、再生成の検査には加えていない。
+  - 検査の違い: セット6は本文・タイトルの「川西」で再生成（`kawanishi`）。セット7は「川西」を許可し、タイトルに「川西」を含む案を除外（`place`）、タイトル・本文に「池田」「サカエマチ」を含むと再生成（`otherPlace`）。
 - **変更時の確認**: セット1〜5で `/api/generate-concept` が呼ばれず `#concept-box` が出ないこと、setId 1〜5・不正値で 403 になることを確認してから本番に出す
 
 ## データフロー

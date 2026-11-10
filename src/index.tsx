@@ -54,6 +54,7 @@ const IMAGE_SETS: Record<number, {
   timeOfDayNote?: string             // 任意。buildPrompt が「季節・時間帯:」行の直後に1行追加する補足（日本語ドラフトに入る＝shouldSkipComposite の判定語を含めないこと）。未指定は追加なし
   conceptEnabled?: boolean           // 任意。true のセットだけ、コンセプトタイトル・文章（/api/generate-concept）を生成・表示する。未指定は false 扱い（セット1〜5）
   conceptPlace?: string              // 任意。コンセプト文章で場所に触れるときの表記（conceptEnabled のセットのみ使用）
+  conceptTheme?: 'arcade' | 'store'  // 任意。コンセプトの systemPrompt・検査の文面の出し分け（CONCEPT_THEMES のキー）。未指定は 'arcade'（セット6）
 }> = {
   1: {
     original: '001-motogazou-station01.jpg',
@@ -151,6 +152,55 @@ const IMAGE_SETS: Record<number, {
     conceptEnabled: true,
     conceptPlace: '池田のサカエマチ2番街',
   },
+  // 【セット7】川西の2階建て店舗の前の駐車場を、6問の回答に沿った新しい空間に作り替える（マスクなし・Canvas合成なし）
+  //   ・original と mask は同じファイル。maskMode:'none' なので元画像をそのまま fal.ai に送る
+  //   ・compositeEnabled:false のため、貼り戻し合成は行わない（compositeCutRatio は型上必須なだけで未使用）
+  //   ・maskAreaLabel だけが buildPrompt の日本語ドラフト（= shouldSkipComposite の判定対象）に入る。判定語（アーケード・提灯・夜・ドーム・大屋根 など）を含めないこと
+  //   ・maskAreaDetail / 各ルール上書きは systemPrompt 側。英語の見本文は置かない。領域指定を意味する語（mask・white・マスク・白）は使わない
+  7: {
+    original: '007-motogazou-store.jpg',
+    mask: '007-motogazou-store.jpg',
+    sceneDescription: '川西にある2階建ての店舗（瓦屋根・ピンクの外壁）と、その前に広がる駐車場',
+    maskAreaLabel: '店舗前の駐車場のエリア',
+    maskAreaDetail:
+      '変更対象は、店舗の前に広がる駐車場（アスファルトの地面）の範囲です。目的は、この駐車場を、ユーザーの回答に沿った新しい空間に作り替えることです。英語プロンプトでこのエリアを指す場合は必ず "the parking lot in front of the store" と呼ぶこと。塗りつぶしや領域指定を意味する語は一切使わないこと。駐車場の上にある既存の置物や小物（動物の置物、コーン類など）は、撤去してよく、回答に沿って作り替えてもよい。ただし、それらの名前を英語プロンプトに書かないこと。' +
+      '【店舗の扱い】店舗の建物は、取り壊したり、形・色・位置・大きさを変えたりしないこと。作り替えるのではなく、手前に置いた物の後ろに、元のまま建っているように描くこと。瓦屋根、2階の5つの窓とシャッター、ピンクの外壁、入口のレンガの庇は、手前の物に覆われない部分は元画像と同じに見えるようにすること。この保持の指示は固定文に含まれるので、英語では短くしか書かないこと。' +
+      '【重なり】新しく作る物の大きさに上限はなく、回答の内容に合わせてよい（大きな建物も可）。手前の物によって、店舗の屋根・窓・入口などの一部または大部分が隠れてもよい。ただし、その場合も店舗を別の建物に描き替えたり、色や形を変えたりしてはならない。' +
+      '【描き方】新しく作る物は、上端を水平に切り落とさず、木の枝先や建物の屋根まで全体を描くこと。そのために、画像の上端で切れない高さに収めること。足元は駐車場の地面に自然に接するようにし、接地の影を付けること。' +
+      '【固定するもの】カメラ位置・視点の高さ・画角・遠近は元画像と同一にすること（固定文に含まれるので英語では書かない）。左右の建物、木、空、背景の山は、新しい物が重ならない部分では元画像のままにすること。' +
+      '【残すもの】手前の歩道、左右のレンガ塀、塀に貼られたポスターは元画像のまま残すこと。新しい物は、歩道・レンガ塀・ポスターの前には置かないこと。' +
+      '【空と光】ユーザーが季節・時間帯や天候を指定した場合は、空の色と明るさ、全体の光の色味と明るさ（左右の建物・木・山にかかる光を含む）だけを、指定に合わせて変えてよい。建物・塀・ポスターの形・位置・柄は変えないこと。雨・曇り・雪は、空・光・雰囲気の表現に限り、路面の濡れや積雪は描かないこと。指定がない場合に限り、元画像と同じ昼間の空と光のままにすること。' +
+      '【文字の禁止】新しい文字は描かないこと。店名・看板・のぼり・旗・庇・壁・窓・メニュー・家具・食器・照明に、文字・英単語・数字・ロゴ・店名を一切描かないこと。施設の種類やスタイルを文字で示さないこと。ただし、元画像にあるポスターの既存の文字は、元のまま残すこと。' +
+      '【様式の書き方】施設名の直前に「レトロ」「モダン」「和風」「ヴィンテージ」などの様式の形容詞を付けないこと。スタイルの回答は、木材の質感・色調・ランプの色・形といった見た目の描写だけで表すこと。' +
+      '【人物】人物の数・年齢層・様子は、ユーザーの回答（利用シーン）に合わせること。' +
+      '【スタイル・素材・色】ユーザーの回答に従うこと。回答に指定がない場合は、特定の素材に固定せず、周囲の景観に自然に調和するデザインにすること。',
+    edgeTreatmentRule: '新しく作る物の足元が、駐車場の地面と自然に馴染み、店舗・歩道・レンガ塀との境目が不自然にならないように短く書く（店舗や周囲の保持の指示は固定文に含まれるため書かない）',
+    maskMode: 'none',
+    aspectRatio: '16:9',
+    compositeEnabled: false,
+    compositeCutRatio: 0.5,   // compositeEnabled:false のため未使用（型上の必須項目）
+    systemPromptRuleOverrides: {
+      1: '英語プロンプトの先頭と末尾の定型句（"photorealistic, real photograph, DSLR photo," や "not anime, not illustration…" など）はサーバー側で付けるので、あなたの出力には書かない。出力は中間部分だけにする',
+      2: 'アニメ風・イラスト風・CG・ポスター風の禁止表現はサーバー側が末尾に付けるので、あなたの出力には書かない',
+      3: 'カメラ位置・視点の高さ・遠近法・構図を元画像と一致させる指示はサーバー側の固定文に含まれるので英語では書かない。光源の方向・時間帯・色調は、ユーザーが季節・時間帯や天候を指定していない場合に限り、元画像と同じ昼間にする（指定がある場合はルール10に従う）。新しく作る物の足元は、駐車場の地面と連続させ、継ぎ目が見えないようにする',
+      4: 'コラージュ・枠・境界線・貼り付けの禁止表現はサーバー側が末尾に付けるので、あなたの出力には書かない',
+      8: '指定されたエリア（店舗前の駐車場）のみを作り替え、それ以外の領域（店舗・左右の建物・木・空・山・歩道・レンガ塀・ポスター）は元画像のまま維持する（保持の指示はサーバー側の固定文に含まれるので英語では書かない）。ただしユーザーが時間帯や天候を指定した場合は、空の色・明るさと全体の光の色味・明るさを指定に合わせて変えてよい（建物・塀・ポスターの形・位置・柄は変えない）',
+      9: '新しく作るすべての要素（建物・施設・樹木・植栽・ベンチ・人物など）が、画像の端や上端で不自然に途中で切れないよう指示する。建物の屋根や樹木の枝先まで全体を描き、水平に切り落とさない。大きさに上限はなく、店舗の手前に重なって店舗の一部または大部分を隠してもよい。足元は駐車場の地面に自然に接するようにする。背景の店舗を保持するとは「描き替えない」という意味であり、手前に物が重なることを禁じるものではない。この配置の指示は末尾の固定文に含まれるので、英語では書かない',
+      10: '空・光・時間帯の扱い。ユーザーの回答の「季節・時間帯」に時間帯・天候・照明の指定がある場合は、その指定に合わせて、空の色と明るさ、画像全体の光の色味と明るさ、雰囲気を変える（左右の建物・木・山にかかる光の色味を含む）。夕方・夕暮れ・夕焼けなら、橙から紫へ移る夕空と、低い位置からの暖かい橙色の光にする。夜なら、暗い夜空と、暗めの全体の光、やわらかな人工光を中心にする。朝・早朝なら、淡く澄んだ朝の空と、低い角度からのやわらかな光にする。雨・曇り・雪は、空・光・雰囲気の表現に限り、路面の濡れ・水たまり・積雪は描かない。いずれの場合も、店舗・塀・ポスターの形・位置・柄は変えない。指定がない場合に限り、元画像と同じ昼間の空と光のままにする。星・月・光の演出などの空の要素は、ユーザーの回答に明記されている場合だけ描く',
+      12: '具体的で視覚的に明確な英語表現を使う。施設は素材・色・形・照明で描写し、看板・店名・文字・ロゴを意味する語で描写しない。施設名（カフェ・マルシェ・店・屋台など）の直前に、「レトロ」「モダン」「和風」「ヴィンテージ」「アンティーク」などの様式を表す形容詞や複合語を付けない。様式は、木目・色調・ランプの色・形などの素材・色・形・照明の描写だけで表す',
+      13: '括弧内の日本語補足は付けず、英語の語句だけで書く。日本語の店名・看板文字・日本語表記を英語プロンプトに入れない',
+      14: '1つのパラグラフにまとめ、英語プロンプトの中間部分だけを出力する（先頭の定型句、カメラ・店舗・周囲の保持、重なりの許可、上端を切り落とさないこと、文字を描かないこと、末尾の定型句はサーバーが付ける。ルール7が求める保持の指示もこれに含まれるので書かない）。固定文と重複する内容は書かず、70語以内にする（厳守。短い句をカンマで並べる）。書く順序は、(1)時間帯・空・光の描写（指定がある場合）、(2)新しく作る施設・スタイル・素材・色・地面、(3)人物。語数が超過する場合は装飾的な描写を削り、時間帯・空・光の描写は削らない',
+    },
+    // 英語プロンプトの先頭・末尾にサーバー側で連結する固定文（店舗の保持・周囲の保持・文字なし・写実）。LLMには中間部分だけを書かせる
+    promptPrefix: 'photorealistic, real photograph, DSLR photo, taken from exactly the same camera position, viewpoint height, lens, perspective and framing as the original photograph. The two-story shop with its tiled roof, five second-floor windows with shutters, pink exterior wall and brick entrance canopy stands exactly as in the original, unchanged in shape, color, position and size, and is never demolished or redrawn; only the parking lot in front of it is redesigned. The sidewalk in the foreground and the brick walls on the left and right with their posters stay exactly as in the original. The neighboring buildings, the trees, the sky and the mountains in the background stay as in the original, except where new objects cover them. If a season, time of day or weather is specified, only the color of the sky and the overall lighting may change; the shapes and positions of everything stay the same.',
+    promptSuffix: 'New objects may stand in front of the shop and hide part or most of it, but the visible parts of the shop stay exactly as in the original. New objects are drawn completely, with their tops, branch tips or roofs fully visible and never cut off by a horizontal edge, and their bases meet the parking-lot ground naturally with soft contact shadows. They are placed only on the parking lot and never in front of the sidewalk, the brick walls or the posters. No new text, no letters, no numbers, no logos, no shop names and no signboard lettering anywhere; the existing posters stay as in the original. No collage, no visible border. photorealistic real photograph, not anime, not illustration, not CG.',
+    // 「季節・時間帯:」行の直後に付く補足。日本語ドラフトに入るため、shouldSkipComposite の判定語（夜・夕方・雨・星 等）は含めない
+    timeOfDayNote: '時間帯の反映: 時間帯が指定されている場合は、空の色と明るさ、全体の光の色味をその時間帯に合わせて変える。店舗は形・色・位置を保ち、光による色味の変化だけを許す。',
+    // 【コンセプト】セット6と同じ仕組み。川西用の文面・検査に出し分ける（conceptTheme: 'store'）
+    conceptEnabled: true,
+    conceptPlace: '川西の店舗前',
+    conceptTheme: 'store',
+  },
 }
 
 const CURRENT_IMAGE_SET  = IMAGE_SETS[IMAGE_SET_ID] ?? IMAGE_SETS[1]
@@ -158,10 +208,10 @@ const ORIGINAL_IMAGE_URL = `${PROD_ORIGIN}${IMAGE_PATH}/${CURRENT_IMAGE_SET.orig
 const MASK_IMAGE_URL     = `${PROD_ORIGIN}${IMAGE_PATH}/${CURRENT_IMAGE_SET.mask}`
 
 // URLクエリ ?set=N のバリデーションヘルパー
-// 1〜6 以外の値・未指定の場合は config の IMAGE_SET_ID を返す
-const resolveImageSetId = (raw: string | undefined): 1 | 2 | 3 | 4 | 5 | 6 => {
+// 1〜7 以外の値・未指定の場合は config の IMAGE_SET_ID を返す
+const resolveImageSetId = (raw: string | undefined): 1 | 2 | 3 | 4 | 5 | 6 | 7 => {
   const n = Number(raw)
-  if (n === 1 || n === 2 || n === 3 || n === 4 || n === 5 || n === 6) return n
+  if (n === 1 || n === 2 || n === 3 || n === 4 || n === 5 || n === 6 || n === 7) return n
   return IMAGE_SET_ID
 }
 
@@ -178,7 +228,7 @@ app.post('/api/refine-prompt', async (c) => {
   }
 
   let draftPrompt: string
-  let setId: 1 | 2 | 3 | 4 | 5 | 6
+  let setId: 1 | 2 | 3 | 4 | 5 | 6 | 7
   let CURRENT_IMAGE_SET: typeof IMAGE_SETS[1]
   try {
     const body = await c.req.json()
@@ -288,12 +338,28 @@ const conceptTextCount = (s: string): number => Array.from(s.replace(/\s+/g, '')
 // 「特になし」系の回答の判定語（app.js の buildPrompt と同じ語）。10字以下の回答にだけ適用する
 const CONCEPT_SKIP_RE = /なし|ない|なんでも|特に|とくに|任せ/
 
-const buildConceptSystemPrompt = (place: string): string => [
-  'あなたは、商店街の再生や公共空間づくりを手がけるまちづくりプランナーです。',
+// セットごとに異なるコンセプトの文面・検査（conceptTheme）。'arcade' はセット6の文面そのまま（1字も変えない）
+type ConceptTheme = {
+  role: string                       // 冒頭の役割の文
+  stage: (place: string) => string[] // 【舞台】の行
+  titlePlaceBan: string              // タイトルの地名禁止の行
+  noFacilityTitle: string            // タイトル:「施設」が指定なしのときの行
+  noFacilitySubject: string          // 施設が指定なしのときに題材にする場所の呼び方
+  nowState: string                   // 「今の様子」を述べない指示（第1段落）
+  nowStateShort: string              // 同・指定なしのときの短い言い方
+  latinNote: string                  // 英字の注意の行
+  otherRegion: string                // 他の地域名の注意の行
+  titlePlaceRe: RegExp               // タイトルの地名の除外条件
+  banKawanishi: boolean              // true: タイトル・文章に「川西」を含むと再生成（セット6）。false: 川西は使ってよい（セット7）
+  textBanRe: RegExp | null           // タイトル・文章に含むと再生成する他地域の名前（セット7のみ）
+}
+
+const buildConceptSystemPrompt = (place: string, t: ConceptTheme): string => [
+  t.role,
   '市民ワークショップの参加者がチャットで答えた6つの回答をもとに、プレゼンシートに載せる「コンセプトタイトル」と「コンセプト文章」を日本語で作ります。',
   '',
   '【舞台】',
-  `舞台は、アーケードのある池田の商店街「サカエマチ2番街」です。場所に触れるときは「${place}」と書き、商店街であることは文中で自然に表します。`,
+  ...t.stage(place),
   '',
   '【入力】',
   'ユーザーメッセージに、次の項目が「項目名: 内容」の形で並びます。内容が「指定なし」の項目は使いません。',
@@ -314,19 +380,19 @@ const buildConceptSystemPrompt = (place: string): string => [
   '・各案は15〜20字、目標は17字前後です。句読点や記号も1字として数えます。',
   '・自然な日本語にします。「冬朝」「夏夕暮れ」のような、一般的でない造語は使いません（「冬の朝」「夏の夕暮れ」「朝陽」「夕映え」などはかまいません）。',
   '・回答の言葉を「AとBで◯◯する喜び」のように並べるだけにしません。情景が浮かぶ短い題にします。',
-  '・タイトルには地名（池田、サカエマチ2番街）を入れません。',
+  t.titlePlaceBan,
   '・タイトルは、スペースや記号で区切らず、ひと続きの題にします。',
   '・比喩や擬人化を使ってかまいません。',
   '・体言止めや、短い詩のような言い回しにします。',
   '・「季節時間帯」が指定なしのときは、季節や時間帯を決めつけません。',
   '・「ペルソナ」が指定なしのときは、感情の言葉を「施設」や「雰囲気」の様子から選びます。',
-  '・「施設」が指定なしのときは、アーケードのある商店街の通りそのものを題材にします。',
+  t.noFacilityTitle,
   '',
   '【コンセプト文章の書き方】',
   '・全体で150〜200字（改行を除く）、3〜4段落にします。段落の間は空行で区切ります。',
   '・文末は敬体（「〜です」「〜ます」）で統一します。',
   '・次の順に書きます。',
-  `  1段落目: どんな場所か。「${place}」に、どんな施設が生まれるかを書く（40〜50字。場所の表記だけで${conceptCount(place)}字あるので、残りは約30〜40字）。施設が指定なしのときは、アーケードの通りが、これからどんな場所になれるかを書く`,
+  `  1段落目: どんな場所か。「${place}」に、どんな施設が生まれるかを書く（40〜50字。場所の表記だけで${conceptCount(place)}字あるので、残りは約30〜40字）。施設が指定なしのときは、${t.noFacilitySubject}が、これからどんな場所になれるかを書く`,
   '  2段落目: 誰が、どんな気持ちで、どう過ごすかを書く（40〜50字）',
   '  3段落目: 季節・時間帯の情景を、光・空気・音・色などで書く（40〜50字）',
   '  4段落目: この場所がまちにもたらす価値を書く（35〜50字）',
@@ -338,13 +404,13 @@ const buildConceptSystemPrompt = (place: string): string => [
   '・回答にない事実（歴史、人口、来訪者数、実在の店名・施設名、数値、イベント名）をつくりません。',
   '・回答に書かれた要素を中心に、言葉をふくらませます。回答に出てこない具体物を足しません。',
   '・施設から連想される品物・音楽・催しなど、回答にない具体物を足しません（たとえばマルシェでも、「新鮮な食材」「手作り品」「音楽」は、回答にない限り書きません）。様子は、光・空気・人の気持ちなどで表します。',
-  '・文章は「これから生まれる場所」として書きます。第1段落も含め、今の商店街の様子（人が行き交っている、暮らしを支えている、賑わっている、など）を述べません。現状の説明ではなく、これから先の姿として書きます。',
-  '・回答の多くが指定なしのときは、アーケードの通りが「これからどんな場所になれるか」を、光・空気・人の気持ちで書きます。今の商店街の様子の説明にはしません。',
+  `・文章は「これから生まれる場所」として書きます。第1段落も含め、${t.nowState}を述べません。現状の説明ではなく、これから先の姿として書きます。`,
+  `・回答の多くが指定なしのときは、${t.noFacilitySubject}が「これからどんな場所になれるか」を、光・空気・人の気持ちで書きます。${t.nowStateShort}の説明にはしません。`,
   '・回答に書かれていない限り、「歴史」「伝統」「老舗」「多世代」は使いません。地域の人々の数や属性（多彩な人々、多世代、など）も書きません。',
   '・「その他指定」は、書かれているときだけ自然に織り込みます。',
   '・参加者の言葉をそのまま並べず、読み手の心に残る言い回しに整えます。',
-  '・英語の店名、英文、アルファベット表記は使いません。「サカエマチ2番街」のカタカナと数字はそのまま使えます。',
-  '・他の地域の名前を出しません。',
+  t.latinNote,
+  t.otherRegion,
   '・「日本一」「唯一」「必ず」などの誇大な表現を使いません。',
   '',
   '【出力形式】',
@@ -390,10 +456,46 @@ const CONCEPT_SEASON_TIME_RE = /(春|夏|秋|冬)(朝|昼|夕暮れ|夕方|夕|�
 const CONCEPT_PLACE_RE       = /池田|サカエマチ/
 const CONCEPT_LATIN_RE       = /[A-Za-zＡ-Ｚａ-ｚ]{2,}/
 const CONCEPT_SPACE_RE       = /[ \u3000\s]/
-const titleReasonsOf = (t: string): TitleReason[] => {
+
+const CONCEPT_THEMES: Record<'arcade' | 'store', ConceptTheme> = {
+  // セット6（サカエマチ2番街）。文面・検査は従来のまま
+  arcade: {
+    role: 'あなたは、商店街の再生や公共空間づくりを手がけるまちづくりプランナーです。',
+    stage: (place) => [`舞台は、アーケードのある池田の商店街「サカエマチ2番街」です。場所に触れるときは「${place}」と書き、商店街であることは文中で自然に表します。`],
+    titlePlaceBan: '・タイトルには地名（池田、サカエマチ2番街）を入れません。',
+    noFacilityTitle: '・「施設」が指定なしのときは、アーケードのある商店街の通りそのものを題材にします。',
+    noFacilitySubject: 'アーケードの通り',
+    nowState: '今の商店街の様子（人が行き交っている、暮らしを支えている、賑わっている、など）',
+    nowStateShort: '今の商店街の様子',
+    latinNote: '・英語の店名、英文、アルファベット表記は使いません。「サカエマチ2番街」のカタカナと数字はそのまま使えます。',
+    otherRegion: '・他の地域の名前を出しません。',
+    titlePlaceRe: CONCEPT_PLACE_RE,
+    banKawanishi: true,
+    textBanRe: null,
+  },
+  // セット7（川西の店舗前）。「商店街」「アーケード」は文面の指示だけで避け、再生成の検査には加えない
+  store: {
+    role: 'あなたは、店舗まわりの空間づくりや公共空間づくりを手がけるまちづくりプランナーです。',
+    stage: (place) => [
+      `舞台は、川西にある店舗の前の駐車場です。この駐車場が、参加者の回答に沿った新しい空間に生まれ変わります。場所に触れるときは「${place}」と書きます。`,
+      '「商店街」「アーケード」という語は、タイトルにも文章にも使いません。',
+    ],
+    titlePlaceBan: '・タイトルには地名（川西）を入れません。',
+    noFacilityTitle: '・「施設」が指定なしのときは、店舗の前の空間そのものを題材にします。',
+    noFacilitySubject: '店舗の前の空間',
+    nowState: '今の駐車場や店舗前の様子（車が停まっている、がらんとしている、など）',
+    nowStateShort: '今の駐車場の様子',
+    latinNote: '・英語の店名、英文、アルファベット表記は使いません。',
+    otherRegion: '・川西以外の地域の名前を出しません。',
+    titlePlaceRe: /川西/,
+    banKawanishi: false,
+    textBanRe: /池田|サカエマチ/,
+  },
+}
+const titleReasonsOf = (t: string, theme: ConceptTheme): TitleReason[] => {
   const r: TitleReason[] = []
   if (CONCEPT_SEASON_TIME_RE.test(t)) r.push('seasonTime')
-  if (CONCEPT_PLACE_RE.test(t)) r.push('place')
+  if (theme.titlePlaceRe.test(t)) r.push('place')
   if (CONCEPT_LATIN_RE.test(t)) r.push('latin')
   if (CONCEPT_SPACE_RE.test(t)) r.push('space')
   return r
@@ -421,6 +523,7 @@ type ConceptCheck = {
   paragraphs: number
   hasLatin: boolean             // 選ばれたタイトルか文章に英字
   hasKawanishi: boolean
+  hasOtherPlace: boolean        // 他地域の名前（セット7の池田・サカエマチ）を含む
   bannedWords: string[]         // 文章に含まれる、回答にない禁止語
   singleParagraph: boolean      // 改行がまったくない（1段落だけ）
   inRange: boolean              // すべての条件を満たしているか（検証用の表示。再生成の判定は reasons）
@@ -463,9 +566,9 @@ const pickConceptTitleIndex = (lengths: number[], reasons: TitleReason[][]): num
 }
 
 // answersText: 回答の全文（回答に含まれている語は、禁止語の検査から除く）
-const checkConcept = (d: ConceptDraft, answersText: string): ConceptCheck => {
+const checkConcept = (d: ConceptDraft, answersText: string, theme: ConceptTheme): ConceptCheck => {
   const titleLengths = d.titles.map(conceptCount)
-  const titleReasons = d.titles.map(titleReasonsOf)
+  const titleReasons = d.titles.map((t) => titleReasonsOf(t, theme))
   const idx          = pickConceptTitleIndex(titleLengths, titleReasons)
   const title        = d.titles[idx]
   const titleLength  = titleLengths[idx]
@@ -477,7 +580,8 @@ const checkConcept = (d: ConceptDraft, answersText: string): ConceptCheck => {
   const singleParagraph = paragraphs <= 1
   // 英字・「川西」は、選ばれたタイトルと文章を検査する
   const hasLatin     = CONCEPT_LATIN_RE.test(title + d.text)
-  const hasKawanishi = /川西/.test(title + d.text)
+  const hasKawanishi = theme.banKawanishi && /川西/.test(title + d.text)
+  const hasOtherPlace = theme.textBanRe ? theme.textBanRe.test(title + d.text) : false
   const bannedWords  = CONCEPT_BANNED_WORDS.filter((w) => d.text.includes(w) && !answersText.includes(w))
   const out = (n: number, lo: number, hi: number) => (n < lo ? lo - n : n > hi ? n - hi : 0)
   const distance = out(titleLength, CONCEPT_TITLE_MIN, CONCEPT_TITLE_MAX) + out(textLength, CONCEPT_TEXT_MIN, CONCEPT_TEXT_MAX)
@@ -496,13 +600,14 @@ const checkConcept = (d: ConceptDraft, answersText: string): ConceptCheck => {
   if (singleParagraph) reasons.push('paragraph')
   if (hasLatin) reasons.push('latin')
   if (hasKawanishi) reasons.push('kawanishi')
+  if (hasOtherPlace) reasons.push('otherPlace')
   bannedWords.forEach((w) => reasons.push(`word:${w}`))
 
   return {
     title, titleIndex: idx + 1, titleLengths, titleReasons, titleLength, titleInRange, titleOk,
-    textLength, paragraphs, singleParagraph, hasLatin, hasKawanishi, bannedWords,
+    textLength, paragraphs, singleParagraph, hasLatin, hasKawanishi, hasOtherPlace, bannedWords,
     inRange: reasons.length === 0 && titleOk,
-    distance: distance + (titleReasons[idx].length ? 5 : 0) + (hasLatin ? 5 : 0) + (hasKawanishi ? 5 : 0) + (singleParagraph ? 5 : 0) + bannedWords.length * 5,
+    distance: distance + (titleReasons[idx].length ? 5 : 0) + (hasLatin ? 5 : 0) + (hasKawanishi ? 5 : 0) + (hasOtherPlace ? 5 : 0) + (singleParagraph ? 5 : 0) + bannedWords.length * 5,
     reasons,
   }
 }
@@ -518,6 +623,7 @@ const buildConceptFeedback = (ck: ConceptCheck, d: ConceptDraft): string => {
   })
   if (ck.hasLatin) parts.push('英字（アルファベット）を含んでいました。')
   if (ck.hasKawanishi) parts.push('「川西」を含んでいました。')
+  if (ck.hasOtherPlace) parts.push('川西以外の地名（池田・サカエマチ）を含んでいました。使わないでください。')
   if (ck.singleParagraph) parts.push('文章が1段落になっていました。3〜4段落に分け、段落の間は空行（\\n\\n）で区切ってください。')
   if (ck.bannedWords.length) parts.push(`文章に${ck.bannedWords.map((w) => `「${w}」`).join('')}を含んでいました。回答にない語なので、使わないでください。`)
   parts.push('タイトル案は各案15〜20字、文章は150〜200字に直してください。')
@@ -551,9 +657,9 @@ app.post('/api/generate-concept', async (c) => {
     return c.json({ success: false, error: 'Invalid JSON body' }, 400)
   }
 
-  // setId は明示的に 1〜6 が指定された場合だけ受け付ける（未指定・不正値は config の既定にフォールバックしない）
+  // setId は明示的に 1〜7 が指定された場合だけ受け付ける（未指定・不正値は config の既定にフォールバックしない）
   const n = Number(body?.setId)
-  const setId = (n === 1 || n === 2 || n === 3 || n === 4 || n === 5 || n === 6) ? n : null
+  const setId = (n === 1 || n === 2 || n === 3 || n === 4 || n === 5 || n === 6 || n === 7) ? n : null
   const setCfg = setId ? IMAGE_SETS[setId] : null
   // コンセプト非対応のセットは OpenAI を呼ばずに終了する（キー確認より前に判定）
   if (!setCfg || !setCfg.conceptEnabled) {
@@ -569,7 +675,8 @@ app.post('/api/generate-concept', async (c) => {
   }
 
   const place = setCfg.conceptPlace ?? ''
-  const systemPrompt = buildConceptSystemPrompt(place)
+  const theme = CONCEPT_THEMES[setCfg.conceptTheme ?? 'arcade']
+  const systemPrompt = buildConceptSystemPrompt(place, theme)
   const userMessage  = buildConceptUserMessage(body.answers as Record<string, unknown>)
   // 回答の全文（禁止語の検査で、回答に含まれている語を除外するために使う）
   const answersText  = Object.values(body.answers as Record<string, unknown>).filter((v) => typeof v === 'string').join(' ')
@@ -610,7 +717,7 @@ app.post('/api/generate-concept', async (c) => {
       return c.json({ success: false, error: `OpenAI API error: ${first.status}` }, 502)
     }
     const draft1 = parseConceptJson(first.content)
-    const check1 = draft1 ? checkConcept(draft1, answersText) : null
+    const check1 = draft1 ? checkConcept(draft1, answersText, theme) : null
 
     let best = draft1
     let bestCheck = check1
@@ -632,7 +739,7 @@ app.post('/api/generate-concept', async (c) => {
       if (second.ok) {
         const draft2 = parseConceptJson(second.content)
         if (draft2) {
-          const check2 = checkConcept(draft2, answersText)
+          const check2 = checkConcept(draft2, answersText, theme)
           // 範囲に近いほうを採用（1回目が JSON 不正なら 2回目）
           if (!bestCheck || check2.distance <= bestCheck.distance) {
             best = draft2
@@ -686,7 +793,7 @@ app.post('/api/generate-submit', async (c) => {
   }
 
   let prompt: string
-  let setId: 1 | 2 | 3 | 4 | 5 | 6
+  let setId: 1 | 2 | 3 | 4 | 5 | 6 | 7
   let CURRENT_IMAGE_SET: typeof IMAGE_SETS[1]
   let MASK_IMAGE_URL: string
   try {
