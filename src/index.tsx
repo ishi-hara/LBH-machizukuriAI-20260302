@@ -315,6 +315,7 @@ const buildConceptSystemPrompt = (place: string): string => [
   '・自然な日本語にします。「冬朝」「夏夕暮れ」のような、一般的でない造語は使いません（「冬の朝」「夏の夕暮れ」「朝陽」「夕映え」などはかまいません）。',
   '・回答の言葉を「AとBで◯◯する喜び」のように並べるだけにしません。情景が浮かぶ短い題にします。',
   '・タイトルには地名（池田、サカエマチ2番街）を入れません。',
+  '・タイトルは、スペースや記号で区切らず、ひと続きの題にします。',
   '・比喩や擬人化を使ってかまいません。',
   '・体言止めや、短い詩のような言い回しにします。',
   '・「季節時間帯」が指定なしのときは、季節や時間帯を決めつけません。',
@@ -377,27 +378,31 @@ const buildConceptUserMessage = (a: Record<string, unknown>): string => {
 const CONCEPT_TITLE_TARGET = 17  // タイトルの目標字数。条件に合う案がないときは、これに最も近い案を選ぶ
 
 // コンセプト生成で使うモデル（/api/refine-prompt のモデルとは別。ここだけを変えればよい）
-const CONCEPT_MODEL = 'gpt-4.1-mini'
+const CONCEPT_MODEL = 'gpt-4.1'
 
 // タイトル案の除外条件
 //   seasonTime: 季節語と時間帯語の直結（冬朝・夏夕暮れ・冬夜 など。「冬の朝」は「の」が入るので対象外）
 //   place:      地名（池田、サカエマチ）
 //   latin:      英字（2文字以上）
-type TitleReason = 'seasonTime' | 'place' | 'latin'
+//   space:      半角・全角スペース（ひと続きの題にする）
+type TitleReason = 'seasonTime' | 'place' | 'latin' | 'space'
 const CONCEPT_SEASON_TIME_RE = /(春|夏|秋|冬)(朝|昼|夕暮れ|夕方|夕|夜)/
 const CONCEPT_PLACE_RE       = /池田|サカエマチ/
 const CONCEPT_LATIN_RE       = /[A-Za-zＡ-Ｚａ-ｚ]{2,}/
+const CONCEPT_SPACE_RE       = /[ \u3000\s]/
 const titleReasonsOf = (t: string): TitleReason[] => {
   const r: TitleReason[] = []
   if (CONCEPT_SEASON_TIME_RE.test(t)) r.push('seasonTime')
   if (CONCEPT_PLACE_RE.test(t)) r.push('place')
   if (CONCEPT_LATIN_RE.test(t)) r.push('latin')
+  if (CONCEPT_SPACE_RE.test(t)) r.push('space')
   return r
 }
 const TITLE_REASON_LABEL: Record<TitleReason, string> = {
   seasonTime: '季節語と時間帯語の直結（冬朝・夏夕暮れのような造語）',
   place: '地名',
   latin: '英字',
+  space: 'スペース',
 }
 
 // 文章に、回答にない限り使わない語（回答に含まれている語は除外して検査する）
@@ -417,6 +422,7 @@ type ConceptCheck = {
   hasLatin: boolean             // 選ばれたタイトルか文章に英字
   hasKawanishi: boolean
   bannedWords: string[]         // 文章に含まれる、回答にない禁止語
+  singleParagraph: boolean      // 改行がまったくない（1段落だけ）
   inRange: boolean              // すべての条件を満たしているか（検証用の表示。再生成の判定は reasons）
   distance: number              // 範囲からの外れ量の合計（小さいほど良い）
   reasons: string[]             // 再生成の理由（空なら再生成しない）
@@ -467,6 +473,8 @@ const checkConcept = (d: ConceptDraft, answersText: string): ConceptCheck => {
   const titleOk      = titleInRange && titleReasons[idx].length === 0
   const textLength   = conceptTextCount(d.text)
   const paragraphs   = d.text.split(/\n+/).filter((p) => p.trim()).length
+  // 段落の検査は「改行がまったくない（1段落だけ）」場合のみ。2段落以上は再生成の条件にしない（段落数は meta に記録する）
+  const singleParagraph = paragraphs <= 1
   // 英字・「川西」は、選ばれたタイトルと文章を検査する
   const hasLatin     = CONCEPT_LATIN_RE.test(title + d.text)
   const hasKawanishi = /川西/.test(title + d.text)
@@ -485,15 +493,16 @@ const checkConcept = (d: ConceptDraft, answersText: string): ConceptCheck => {
   if (allExcluded) reasons.push('titleExcluded')
   if (!hasCleanInRange && (!allExcluded || !titleLengths.some(inRangeLen))) reasons.push('titleLength')
   if (textLength < CONCEPT_TEXT_MIN || textLength > CONCEPT_TEXT_MAX) reasons.push('textLength')
+  if (singleParagraph) reasons.push('paragraph')
   if (hasLatin) reasons.push('latin')
   if (hasKawanishi) reasons.push('kawanishi')
   bannedWords.forEach((w) => reasons.push(`word:${w}`))
 
   return {
     title, titleIndex: idx + 1, titleLengths, titleReasons, titleLength, titleInRange, titleOk,
-    textLength, paragraphs, hasLatin, hasKawanishi, bannedWords,
+    textLength, paragraphs, singleParagraph, hasLatin, hasKawanishi, bannedWords,
     inRange: reasons.length === 0 && titleOk,
-    distance: distance + (titleReasons[idx].length ? 5 : 0) + (hasLatin ? 5 : 0) + (hasKawanishi ? 5 : 0) + bannedWords.length * 5,
+    distance: distance + (titleReasons[idx].length ? 5 : 0) + (hasLatin ? 5 : 0) + (hasKawanishi ? 5 : 0) + (singleParagraph ? 5 : 0) + bannedWords.length * 5,
     reasons,
   }
 }
@@ -509,6 +518,7 @@ const buildConceptFeedback = (ck: ConceptCheck, d: ConceptDraft): string => {
   })
   if (ck.hasLatin) parts.push('英字（アルファベット）を含んでいました。')
   if (ck.hasKawanishi) parts.push('「川西」を含んでいました。')
+  if (ck.singleParagraph) parts.push('文章が1段落になっていました。3〜4段落に分け、段落の間は空行（\\n\\n）で区切ってください。')
   if (ck.bannedWords.length) parts.push(`文章に${ck.bannedWords.map((w) => `「${w}」`).join('')}を含んでいました。回答にない語なので、使わないでください。`)
   parts.push('タイトル案は各案15〜20字、文章は150〜200字に直してください。')
   if (ck.reasons.includes('titleLength') || ck.reasons.includes('titleExcluded')) {
@@ -520,7 +530,7 @@ const buildConceptFeedback = (ck: ConceptCheck, d: ConceptDraft): string => {
         : `タイトルは、どの案も${diff}字ほど減らし、17字前後にしてください。`)
     }
     if (ck.titleReasons.some((r) => r.length > 0)) {
-      parts.push('タイトルは、季節語と時間帯語を直結せず（「冬の朝」のように「の」を入れる）、地名と英字を入れずに、新しく3案を作ってください。')
+      parts.push('タイトルは、季節語と時間帯語を直結せず（「冬の朝」のように「の」を入れる）、地名・英字・スペースを入れず、ひと続きの題にして、新しく3案を作ってください。')
     }
   }
   if (ck.textLength < CONCEPT_TEXT_MIN) parts.push(`文章はあと約${CONCEPT_TEXT_MIN + 25 - ck.textLength}字増やしてください。`)
