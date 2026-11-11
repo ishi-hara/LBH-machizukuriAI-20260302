@@ -34,6 +34,23 @@ const resolveImageBaseUrl = (requestUrl: string): string => {
   return `${PROD_ORIGIN}${IMAGE_PATH}`
 }
 
+// セット別の質問文・下書き・合成の追加スキップ語（/static/set-text.js が読む。app.js は変更しない）
+//   ・questions[2] の {Q1} には Q1 の回答が入る（空・20字超・なし系・疑問・です/ます等で終わる回答のときは q2Fixed）
+//   ・summaryLabels / draftLabels は [旧見出し, 新見出し]。「季節・時間帯:」は app.js の時間帯行判定が使うので変えない
+//   ・draftLine1 / draftLine1None の {AREA} は maskAreaLabel、{Q1} は Q1 の回答。noneWords は、空白と句読点を除いた Q1 の回答と完全一致したときだけ「なし」扱い
+//   ・extraSkip は回答（6問）に含まれると合成をスキップする語。strip の語は判定前に回答から取り除く
+type SetText = {
+  questions: Record<2 | 3 | 4 | 5 | 6, string>
+  q2Fixed: string
+  noneWords: string[]
+  summaryLabels: [string, string][]
+  draftLabels: [string, string][]
+  draftLine1: string
+  draftLine1None: string
+  draftLine5: string
+  extraSkip: { hang: string[]; tall: string[]; event: string[]; lamp: string[]; strip: string[] }
+}
+
 const IMAGE_SETS: Record<number, {
   original: string
   mask: string
@@ -57,6 +74,8 @@ const IMAGE_SETS: Record<number, {
   conceptTheme?: 'arcade' | 'store'  // 任意。コンセプトの systemPrompt・検査の文面の出し分け（CONCEPT_THEMES のキー）。未指定は 'arcade'（セット6）
   foregroundBuildingKeywords?: string[]  // 任意。施設（ドラフト1行目の「○○をメインとした場所にする」の○○）にこれらの語が含まれるとき、foregroundBuildingSentence を promptPrefix の直後に挿入する。未指定のセット（1〜6）は挿入なし
   foregroundBuildingSentence?: string    // 任意。上記キーワードに一致したときに promptPrefix の直後へ連結する固定文（英語・アポストロフィを含めない）
+  initialQuestionHtml?: string       // 任意。初期メッセージ（Q1）の質問部分のHTML。未指定（セット1〜5・7）は共通の文（この場所に、どんな施設を創りたいですか？…）
+  setText?: SetText                  // 任意。質問文・下書き・合成の追加スキップ語の辞書。あるセットだけ window.__SET_TEXT__ として埋め込み、app.js の後に /static/set-text.js を読み込む。未指定のセットのHTMLは変わらない
 }> = {
   1: {
     original: '001-motogazou-station01.jpg',
@@ -153,6 +172,44 @@ const IMAGE_SETS: Record<number, {
     // 【コンセプト】セット6のみ有効。タイトル・文章を /api/generate-concept で生成し、生成画像の下に表示する
     conceptEnabled: true,
     conceptPlace: '池田のサカエマチ2番街',
+    // 【質問文の差し替え】Q1（初期メッセージ）と、Q2〜Q6・確認メッセージの見出し・日本語ドラフト・合成の追加スキップ語。/static/set-text.js が読む
+    //   ・ドラフトに入る見出しは判定対象。「季節・時間帯:」は変えない。見出し・固定文に NIGHTTIME_KEYWORDS / SKIP_KEYWORDS_EXTRA の語（夜・星・雨・提灯・アーケード 等）を含めないこと
+    initialQuestionHtml: 'この通りに、どんな施設や機能、楽しみを加えたいですか？<br>（例：休憩できる木製の円形ベンチ、幼児が遊べる遊具広場、朝市のように賑やかなマルシェ風の軒先\u3000など）',
+    setText: {
+      questions: {
+        2: '{Q1}ですね！ どんな人たちが、どんな気持ちで、この通りを歩きますか？\n（例：買い物帰りの子連れ家族が、店をのぞきながらゆっくり歩く通り\u3000など）',
+        3: 'どんな雰囲気の店先が並ぶ通りがお好みですか？\u3000看板・暖簾・ノボリ・ショーウィンドウなどの見せ方も希望があれば教えてください（無くても大丈夫です）。\n（例：木製の看板と暖簾が揺れる昭和レトロな店先、ガラス張りのショーウィンドウが明るいモダンな店並みなど）',
+        4: '通りの足元や頭上には、どんなものがあると素敵ですか？\u3000植栽・照明・屋根の飾りなども希望があれば教えてください（無くても大丈夫です）。\n（例：石畳に季節の花が並ぶ、アーケードから提灯・旗・飾りなどが吊るされた通りなど）',
+        5: 'この通りを、いつの時間帯や季節・行事に見たいですか？\n（例：夏の夕暮れ、店の灯りがともり始めた通り、季節の行事（例：クリスマス、お正月、七夕など）に彩られた通りなど）',
+        6: '最後に、通りの中で特にこだわりたい要素や、物語・思い出などがあれば教えてください（無くても大丈夫です）。\n（例：ペットと一緒に散歩できる通り、通りの中央に古い時計台が立っている、お祭りの日には屋台が並ぶなど）',
+      },
+      q2Fixed: 'いいですね！ どんな人たちが、どんな気持ちで、この通りを歩きますか？\n（例：買い物帰りの子連れ家族が、店をのぞきながらゆっくり歩く通り\u3000など）',
+      noneWords: ['特になし', 'なし', 'ない', 'とくになし', 'なんでも', 'おまかせ', 'お任せ', '任せる'],
+      summaryLabels: [
+        ['施設:', '加えたいもの:'],
+        ['過ごし方:', '通りを歩く人:'],
+        ['スタイル:', '店先の雰囲気:'],
+        ['周囲・設備:', '足元・頭上:'],
+        ['季節/時間帯:', '時間帯・季節・行事:'],
+        ['こだわり:', 'こだわり・物語:'],
+      ],
+      draftLabels: [
+        ['利用シーン・賑わい: ', '通りを歩く人・気持ち: '],
+        ['スタイル・造り: ', '店先の雰囲気・見せ方: '],
+        ['周囲の環境: ', '通りの足元・頭上の様子: '],
+        ['追加要素: ', 'こだわり・物語: '],
+      ],
+      draftLine1: '{AREA}を、{Q1}を加えた新しい商店街の通りにする。',
+      draftLine1None: '{AREA}を、新しい商店街の通りにする。',
+      draftLine5: 'ただし、加えるものや樹木などの追加要素の上端が、画像の途中で水平に切れないようにする。',
+      extraSkip: {
+        hang: ['吊る', '吊り', '吊し', '吊下', 'ぶら下', 'つるす', 'つるし', '垂れ幕', '垂れ下', '横断幕', '屋根から', '屋根に飾', '屋根の飾', '天井から', '天井に', '提灯', 'ちょうちん', '灯籠', 'ぼんぼり', '万国旗', 'フラッグ', 'ガーランド', 'バルーン', '風船', 'モビール', 'シャンデリア', 'ランタン', 'ミラーボール', '旗'],
+        tall: ['時計台', '時計塔', 'タワー', 'ツリー', '笹', '七夕飾り', '鯉のぼり', '風車', '観覧車', 'ゲート', 'アーチ', '大木', '巨木'],
+        event: ['クリスマス', '正月', '七夕', 'ハロウィン', '年末年始', '初詣', '端午'],
+        lamp: ['ともり始め', '灯りがとも', '明かりがとも', 'あかりがとも', '灯がとも'],
+        strip: ['のぼり旗', 'ノボリ旗', '幟旗'],
+      },
+    },
   },
   // 【セット7】川西の2階建て店舗の前の駐車場を、6問の回答に沿った新しい空間に作り替える（マスクなし・Canvas合成なし）
   //   ・original は元の写真、mask は左右の置物（像・犬・コーン等）を画像加工で消した 007-motogazou-store-clean.jpg（加工範囲の外側の画素は元画像と同一）。maskMode:'none' なので mask の画像をそのまま fal.ai に送る。original はページ表示用
@@ -1036,7 +1093,7 @@ app.get('/', (c) => {
       <div class="chat-message chat-message--ai">
         <div class="chat-message__avatar" aria-hidden="true">🤖</div>
         <div class="chat-message__bubble">
-          『ゆめまち☆キャンバス』へようこそ！<br>あなたの言葉が、街の未来の景色を創ります。<br>世界に一つだけの素敵な未来、すごく楽しみです。<br>さあ、始めましょう！<br><br>では、いよいよスタートです！<br>この場所に、どんな施設を創りたいですか？<br>（例：公園、遊園地、美術館　など）
+          『ゆめまち☆キャンバス』へようこそ！<br>あなたの言葉が、街の未来の景色を創ります。<br>世界に一つだけの素敵な未来、すごく楽しみです。<br>さあ、始めましょう！<br><br>では、いよいよスタートです！<br>${CURRENT_IMAGE_SET.initialQuestionHtml ?? 'この場所に、どんな施設を創りたいですか？<br>（例：公園、遊園地、美術館　など）'}
         </div>
       </div>
 
@@ -1137,9 +1194,15 @@ app.get('/', (c) => {
           ? `,\n      conceptEnabled: true`
           : ''
       }
-    };
+    };${
+      CURRENT_IMAGE_SET.setText
+        ? `\n    window.__SET_TEXT__ = ${JSON.stringify(CURRENT_IMAGE_SET.setText).replace(/</g, '\\u003c')};`
+        : ''
+    }
   </script>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js"></script>${
+    CURRENT_IMAGE_SET.setText ? `\n  <script src="/static/set-text.js"></script>` : ''
+  }
 </body>
 </html>`)
 })
