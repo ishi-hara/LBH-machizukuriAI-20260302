@@ -6,7 +6,7 @@
  * ・app.js は変更しない。後から読み込まれるこのファイルが、次のものだけを差し替える。
  *     QUESTIONS[2..6]            … 質問文（Q2 は Q1 の回答を「○○ですね！」に入れる）
  *     showTypingThenMessage      … 確認メッセージの見出し
- *     buildPrompt                … 日本語ドラフトの1行目・2行目・5行目・見出し
+ *     buildPrompt                … 日本語ドラフトの1行目・2行目・5行目・見出し、時間帯の指定がないときの「時間帯の反映:」行
  *     shouldSkipComposite        … 回答に頭上の飾り・背の高い物・行事・灯りの語があるときの追加スキップ
  * ・Q1 の表示は index.tsx の初期HTML（initialQuestionHtml）で差し替える。
  * ・「季節・時間帯:」の見出しは変えない（app.js の時間帯行判定が行頭のこの文字列を使うため）。
@@ -87,6 +87,42 @@
     };
   }
 
+  // ---- 時間帯の指定がないときの「時間帯の反映:」行 ----
+  // 「季節・時間帯」の回答（Q5だけ）に、時間帯・天候・灯りの語が1つもないときは、下書きの「時間帯の反映:」行を次の文に差し替える。
+  // ・語の一覧は、index.tsx の rule10 と、app.js の合成スキップ語（NIGHTTIME_KEYWORDS / SKIP_KEYWORDS_EXTRA / セット6の時間帯行限定語）に揃える。
+  // ・差し替え文には合成スキップの判定語（夕方・夜・星など）を入れない（下書き全体が判定対象のため）。
+  // ・Q5 が「特になし」などのときは、app.js が「季節・時間帯:」行も「時間帯の反映:」行も付けないので、何も差し替えない。
+  var TOD_NONE_NOTE = '時間帯の反映: 時間帯の指定はない。行事や季節の飾りだけを加え、空の色と明るさ、全体の光は元画像と同じ昼間のままにする。空には天体を描かない。';
+  var TOD_WORDS = [
+    // 朝
+    '朝', '早朝', '朝方', '朝焼け', '明け方', '夜明け', '日の出', 'サンライズ', 'あさ', 'あけがた', 'よあけ', '未明',
+    // 昼
+    '昼', '昼間', '日中', '正午', '午前', '午後', '真昼', 'ひる',
+    // 夕
+    '夕', '夕方', '夕暮れ', '夕焼け', '夕景', '夕刻', '薄暮', '黄昏', 'たそがれ', 'サンセット', '日没', '日暮', 'ゆうがた', 'ゆうぐれ', 'ゆうやけ', 'トワイライト', 'マジックアワー', 'ゴールデンアワー', 'ブルーアワー',
+    // 夜
+    '夜', '夜景', '夜間', '深夜', '夜空', '星', '星空', '月夜', '満月', '三日月', '月明かり', '月見', '月光', '宵', 'ナイト', '白夜', 'よる', 'しんや', 'よぞら', 'ほし',
+    // 天候
+    '晴', '雨', '曇', '雪', '霧', '嵐', 'くもり', 'はれ', 'あめ', 'ゆき'
+  ];
+  var todWordsAll = function () {
+    var lamp = (T.extraSkip && T.extraSkip.lamp) || [];
+    return TOD_WORDS.concat(lamp);
+  };
+  var todHits = function (s) {
+    var v = plain(s);
+    return todWordsAll().filter(function (w) { return v.indexOf(w) >= 0; });
+  };
+  var replaceTimeNote = function (t, a) {
+    var note = W.timeOfDayNote;
+    if (!note || todHits(a.timeOfDay).length > 0) return t;
+    var lines = t.split('\n');
+    var i = lines.indexOf(note);
+    if (i < 0) return t;
+    lines[i] = TOD_NONE_NOTE;
+    return lines.join('\n');
+  };
+
   // ---- 日本語ドラフト ----
   var fill = function (tpl, area, q1) {
     return tpl.replace('{AREA}', function () { return area; }).replace('{Q1}', function () { return q1; });
@@ -105,7 +141,8 @@
     // 2行目は削除。5行目の施設名は固定語に置き換える
     t = line1 + '\n' + t.slice((o1 + o2).length);
     t = t.replace(o5, function () { return T.draftLine5; });
-    return replaceLinePrefixes(t, T.draftLabels || [], 0);
+    t = replaceLinePrefixes(t, T.draftLabels || [], 0);
+    return replaceTimeNote(t, a);
   };
   var _buildPrompt = buildPrompt;
   buildPrompt = function (a) {
@@ -143,5 +180,5 @@
   };
 
   // 動作確認用（画面には影響しない）
-  window.__SET_TEXT_API__ = { findExtraSkipWords: findExtraSkipWords, isNoneAnswer: isNoneAnswer, q1ForQ2: q1ForQ2 };
+  window.__SET_TEXT_API__ = { findExtraSkipWords: findExtraSkipWords, isNoneAnswer: isNoneAnswer, q1ForQ2: q1ForQ2, todHits: todHits };
 })();
