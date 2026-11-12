@@ -51,6 +51,12 @@ type SetText = {
   extraSkip: { hang: string[]; tall: string[]; event: string[]; lamp: string[]; strip: string[] }
 }
 
+// 【セット6のみ】rule10 末尾の行事の英語例文ブロック。IMAGE_SETS[6] では rule10 の末尾へそのまま連結する（system は従来と同一）。
+// /api/refine-prompt で、下書きに行事語（SET6_EVENT_WORDS）が1つもないときだけ、この部分を system から外す
+const SET6_RULE10_EVENT_EXAMPLE = '描き方の例: クリスマス=a small decorated fir tree, green wreaths with red ribbons and warm string lights along the shopfronts / お正月=small pine-and-bamboo arrangements by the shop entrances and red-and-white paper ribbons hung under the roof / 七夕=a modest bamboo branch with colorful blank paper strips and paper streamers hung under the roof。上記以外の行事も同じ考え方で、素材・色・形だけで描く'
+// set-text.js の辞書 extraSkip.event と同じ7語
+const SET6_EVENT_WORDS = ['クリスマス', '正月', '七夕', 'ハロウィン', '年末年始', '初詣', '端午']
+
 const IMAGE_SETS: Record<number, {
   original: string
   mask: string
@@ -66,6 +72,9 @@ const IMAGE_SETS: Record<number, {
   compositeIgnoreSkip?: string[]     // 任意。shouldSkipComposite の判定語のうち、このセットではスキップ判定から除外する語（建物・飾りの語など）。未指定は除外なし
   compositeTimeOfDaySkip?: string[]  // 任意。「季節・時間帯」の行に限ってスキップ判定に加える語（朝・雨・曇り・雪など）。未指定は追加なし
   systemPromptRuleOverrides?: Partial<Record<1 | 2 | 3 | 4 | 8 | 9 | 10 | 12 | 13 | 14, string>>  // 任意。systemPrompt のルール番号ごとの本文（番号と改行は自動付与）。未指定のルールは全セット共通の文言。セット1〜5は未指定
+  rule10EventExample?: string        // 任意（セット6のみ）。rule10 末尾の行事の例文ブロック。eventWords が下書きに1つもないとき、system の rule10 からこのブロックを外す
+  eventWords?: string[]              // 任意（セット6のみ）。上記の判定に使う行事語
+  refineGuard?: { maxWords: number; repeatLimit: number; trimWords: number }  // 任意（セット6のみ）。LLM出力の中間部分が maxWords 語超、または同じ句が repeatLimit 回以上なら1回再試行し、なお同じなら重複をまとめて trimWords 語以内に切り詰める
   promptPrefix?: string              // 任意。/api/refine-prompt の結果の先頭にサーバー側で連結する固定文（英語）。未指定は連結なし（セット1〜5）
   promptSuffix?: string              // 任意。同じく末尾に連結する固定文（英語）。未指定は連結なし（セット1〜5）
   timeOfDayNote?: string             // 任意。buildPrompt が「季節・時間帯:」行の直後に1行追加する補足（日本語ドラフトに入る＝shouldSkipComposite の判定語を含めないこと）。未指定は追加なし
@@ -159,12 +168,15 @@ const IMAGE_SETS: Record<number, {
       4: 'コラージュ・枠・境界線・貼り付けの禁止表現はサーバー側が末尾に付けるので、あなたの出力には書かない',
       8: '指定されたエリアのみを変更し、それ以外の領域は元画像のまま維持する（建物・屋根・看板の保持はサーバー側の固定文に含まれるので英語では書かない）。ただしユーザーが時間帯や天候を指定した場合は、空の色・明るさと全体の光の色味・明るさを指定に合わせて変えてよい（建物・アーケード構造・看板の形や位置は変えない）',
       9: '新たに追加するすべての要素（店先・ベンチ・樹木・植栽・提灯・日よけ・暖簾・ノボリ・吊り飾りなどを含む）が、画像の端や境界で不自然に途中で切れないよう指示する。地上に置く要素はすべてアーケードの屋根の下、かつ看板の下端より下に収め、屋根・支柱・看板・2つの照明には重ねない。吊り飾りは屋根の骨組みから下げる形に限り、看板の下端より下にだけ描き、看板・2つの照明の前には重ねない。この配置の指示は末尾の固定文に含まれるので、英語では書かない。樹木・時計台・ツリー・笹飾りなど背の高いものは、鉢植え・低木、または屋根の下端より低い小ぶりなものに限り、屋根を突き抜ける高さのものは描かない。背景の構造物を保持するとは「描き替えない」という意味であり、手前にベンチや鉢植えが重なることを禁じるものではない',
-      10: '空・光・時間帯の扱い。ユーザーの回答の「季節・時間帯」に時間帯・天候・照明の指定がある場合は、その指定に合わせて、アーケード入口の外に見える空の色と明るさ、画像全体の光の色味と明るさ、雰囲気を変える。夕方・夕暮れ・夕焼けなら、空は橙から紫へ移る夕空、全体の光は低い位置からの暖かい橙色の光にする（例: an orange-to-purple dusk sky and warm low-angle orange light）。店の灯りがともり始めた通りなど、灯りの様子で夕方を表す回答は、「ともり始め」・「灯りがとも」・「明かりがとも」・「あかりがとも」・「灯がとも」のいずれかの表現を含む場合に限り、夕方として扱い、同じ夕方の空と全体の光にする。行事の飾りのイルミネーション・string lights・ろうそく風の灯りなど、飾りの灯りはこの表現に当たらず、夕方としては扱わない。夜なら、空は暗い夜空、全体の光は暗めにして、街灯や店先のやわらかな人工光を中心にする（例: a dark night sky and soft warm artificial lights）。朝・早朝なら、淡く澄んだ朝の空と、低い角度からのやわらかな朝の光にする。雨・曇り・雪は、空・光・雰囲気（灰色にくもった空、弱くやわらかな拡散光、屋根の外の空に見える雨や雪）の表現に限り、路面の濡れ・水たまり・積雪・地面の雪は描かない。星・月・光の演出など空の要素は、ユーザーの回答に明記されている場合だけ描く。回答にない場合は空に何も足さない。ある場合は、看板の上端より上と看板の左右の外側に見える狭い空にだけ小さく描き、看板の面・文字・2つの照明の上には何も重ねない。空を広げるために看板を縮める・下げる、画角を引く、屋根を消すことは禁止。昼間（春の昼間など）の指定は、明るい昼間の空と光として表現する。時間帯・天候の指定がない場合に限り、元画像と同じ昼間の空と光を維持する。時間帯・天候を指定された場合は、その指定と矛盾する表現、すなわち昼間・晴天・青空を意味する語、および空や光について「元画像と同じ」「元画像のまま」と述べる表現を、英語プロンプトに一切入れないこと。なお、アーケード構造・看板・床の形や位置を「元画像と同じ」と述べるのは問題ない。行事（クリスマス・お正月・七夕など）の指定がある場合は、その行事らしい飾りを、アーケードの屋根の下の店先と通路にだけ描く。飾りはすべて看板の下端より下に収め、看板の前・2つの照明の前・屋根の外には描かない。吊り飾りは屋根の骨組みから下げる形にし、屋根・骨組み・支柱は元のまま変えない。背の高いもの（ツリー・笹・門松など）は、屋根の下端より低い小ぶりなものにする。飾りに文字は描かず、短冊や札は何も書かれていない色紙として描く。行事の飾りのために空・光・時間帯は変えない（時間帯の指定がなければ、元画像と同じ昼間の空と光のままにする）。行事だけで時間帯の指定がない場合は、夕方・夜の空にしない。星・月・夕焼けを描かない。行事の飾りのイルミネーションや灯りがあっても、時間帯は変えない。季節・時間帯の回答が季節だけ（冬・春など）で行事名がない場合は、行事の飾り（松竹・紅白の紙リボン・ツリー・リースなど）を加えず、屋根の下や頭上に吊るす飾りも加えない。描き方の例: クリスマス=a small decorated fir tree, green wreaths with red ribbons and warm string lights along the shopfronts / お正月=small pine-and-bamboo arrangements by the shop entrances and red-and-white paper ribbons hung under the roof / 七夕=a modest bamboo branch with colorful blank paper strips and paper streamers hung under the roof。上記以外の行事も同じ考え方で、素材・色・形だけで描く',
+      10: '空・光・時間帯の扱い。ユーザーの回答の「季節・時間帯」に時間帯・天候・照明の指定がある場合は、その指定に合わせて、アーケード入口の外に見える空の色と明るさ、画像全体の光の色味と明るさ、雰囲気を変える。夕方・夕暮れ・夕焼けなら、空は橙から紫へ移る夕空、全体の光は低い位置からの暖かい橙色の光にする（例: an orange-to-purple dusk sky and warm low-angle orange light）。店の灯りがともり始めた通りなど、灯りの様子で夕方を表す回答は、「ともり始め」・「灯りがとも」・「明かりがとも」・「あかりがとも」・「灯がとも」のいずれかの表現を含む場合に限り、夕方として扱い、同じ夕方の空と全体の光にする。行事の飾りのイルミネーション・string lights・ろうそく風の灯りなど、飾りの灯りはこの表現に当たらず、夕方としては扱わない。夜なら、空は暗い夜空、全体の光は暗めにして、街灯や店先のやわらかな人工光を中心にする（例: a dark night sky and soft warm artificial lights）。朝・早朝なら、淡く澄んだ朝の空と、低い角度からのやわらかな朝の光にする。雨・曇り・雪は、空・光・雰囲気（灰色にくもった空、弱くやわらかな拡散光、屋根の外の空に見える雨や雪）の表現に限り、路面の濡れ・水たまり・積雪・地面の雪は描かない。星・月・光の演出など空の要素は、ユーザーの回答に明記されている場合だけ描く。回答にない場合は空に何も足さない。ある場合は、看板の上端より上と看板の左右の外側に見える狭い空にだけ小さく描き、看板の面・文字・2つの照明の上には何も重ねない。空を広げるために看板を縮める・下げる、画角を引く、屋根を消すことは禁止。昼間（春の昼間など）の指定は、明るい昼間の空と光として表現する。時間帯・天候の指定がない場合に限り、元画像と同じ昼間の空と光を維持する。時間帯・天候を指定された場合は、その指定と矛盾する表現、すなわち昼間・晴天・青空を意味する語、および空や光について「元画像と同じ」「元画像のまま」と述べる表現を、英語プロンプトに一切入れないこと。なお、アーケード構造・看板・床の形や位置を「元画像と同じ」と述べるのは問題ない。行事（クリスマス・お正月・七夕など）の指定がある場合は、その行事らしい飾りを、アーケードの屋根の下の店先と通路にだけ描く。飾りはすべて看板の下端より下に収め、看板の前・2つの照明の前・屋根の外には描かない。吊り飾りは屋根の骨組みから下げる形にし、屋根・骨組み・支柱は元のまま変えない。背の高いもの（ツリー・笹・門松など）は、屋根の下端より低い小ぶりなものにする。飾りに文字は描かず、短冊や札は何も書かれていない色紙として描く。行事の飾りのために空・光・時間帯は変えない（時間帯の指定がなければ、元画像と同じ昼間の空と光のままにする）。行事だけで時間帯の指定がない場合は、夕方・夜の空にしない。星・月・夕焼けを描かない。行事の飾りのイルミネーションや灯りがあっても、時間帯は変えない。季節・時間帯の回答が季節だけ（冬・春など）で行事名がない場合は、行事の飾り（松竹・紅白の紙リボン・ツリー・リースなど）を加えず、屋根の下や頭上に吊るす飾りも加えない。' + SET6_RULE10_EVENT_EXAMPLE,
       12: '具体的で視覚的に明確な英語表現を使う。店構えは素材・色・形・照明で描写する。看板・暖簾・ノボリは、何も書かれていない板や、無地または縞・格子などの模様の布として描写し、sign・signboard・banner with text・lettering・logo・shop name など文字や店名を意味する語は使わない。施設名（カフェ・マルシェ・店・屋台など）の直前に、「レトロ」「モダン」「和風」「ヴィンテージ」「アンティーク」などの様式を表す形容詞や複合語を付けない（「レトロなカフェ」「昭和レトロな店先」「モダンな店並み」「和風のマルシェ」のような名詞句にしない）。様式は、木目・濃い色の板張り・淡い色調・琥珀色のランプ・曲線的な形など、素材・色・形・照明の描写だけで表す（例: a cafe counter with dark wood paneling and warm amber lamps）。「公園」「広場」「庭園」「ガーデン」「テラス」など屋外の場所を表す語を、場所の名前として英語に書かない。回答にそれらの語があっても、屋根の下の通路に置く設置物（植え込み、芝生のスペース、ベンチ、テーブル席、飾りつけなど）として書く（例: a small green seating area with planters and benches along the arcade street / a small play corner with low soft play equipment for toddlers along the arcade street）',
       13: '括弧内の日本語補足は付けず、英語の語句だけで書く。日本語の店名・看板文字・日本語表記を英語プロンプトに入れない',
       14: '1つのパラグラフにまとめ、英語プロンプトの中間部分だけを出力する（先頭の定型句、カメラ・看板・屋根・遠近の保持、店舗に文字を描かないこと、末尾の定型句はサーバーが付ける。ルール7・11が求める保持の指示もこれに含まれるので書かない）。固定文と重複する内容は書かず、66語以内にする（厳守。短い句をカンマで並べる）。書く順序は、(1)時間帯・空・光の描写（指定がある場合）、(2)加えるもの・店先（看板・暖簾・ノボリ）・床の素材・人物・吊り飾り・行事の飾り、(3)ユーザーの回答に明記された空の演出（回答にある場合のみ。ない場合は何も書かず、空の演出を指す英語の語も一切書かない）の順にする。語数が超過する場合は優先度の低い装飾的な描写を削り、時間帯・空・光の描写は削らない',
     },
     // 【案C2】英語プロンプトの先頭・末尾にサーバー側で連結する固定文（構造ロック・文字なし・写実）。LLMには中間部分だけを書かせる
+    rule10EventExample: SET6_RULE10_EVENT_EXAMPLE,
+    eventWords: SET6_EVENT_WORDS,
+    refineGuard: { maxWords: 100, repeatLimit: 3, trimWords: 70 },
     promptPrefix: 'photorealistic, real photograph, DSLR photo, taken from exactly the same camera position, viewpoint height, lens and framing as the original photograph. The huge green entrance sign with its Japanese lettering spans about 90% of the frame width in the upper part of the image, its lower edge at about 40% of the image height, with the two floodlights at its upper left and right, all unchanged in position, size, shape, base color and lettering; only the lighting on them may follow the time of day. Below it, the translucent arched arcade roof with its ribs and the green support columns stay fully intact and recede to the vanishing point at the center of the image.',
     promptSuffix: 'All additions stay under the arcade roof and below the lower edge of the sign, and never cover the sign or the two floodlights; the roof, its ribs and the green support columns stay unchanged. The face of the green sign and its lettering stay completely clear: nothing is ever placed in front of them, and no light streaks, glow, sparks or effects touch them. Shopfront fascias, awnings, windows and walls are plain and unmarked. Any shop sign panels, door curtains or cloth flags that appear carry only colors and simple patterns, never letters, numbers, writing-like marks, logos or shop names; the Japanese text on the green sign is the only writing in the scene. No collage, no visible border. photorealistic real photograph, not anime, not illustration, not CG.',
     // 「季節・時間帯:」行の直後に付く補足。日本語ドラフトに入るため、shouldSkipComposite の判定語（夜・夕方・雨・星 等）は含めない
@@ -340,7 +352,20 @@ app.post('/api/refine-prompt', async (c) => {
     `14. ${ro(14, `1つのパラグラフにまとめ、200語以内にする。語数が超過する場合は優先度の低い装飾的な描写を削って調整する`)}\n` +
     `15. プロンプトのテキストのみを出力し、説明や前置きは一切不要`
 
-  try {
+  // 【セット6のみ】下書きに行事語が1つもないときは、rule10 の行事の英語例文ブロックを system から外す（LLMが例文を写して行事の飾りを足すのを防ぐ）。
+  // 行事語があるとき、および rule10EventExample / eventWords のないセット1〜5・7は、system を一切変えない
+  let systemPromptToSend = systemPrompt
+  const { rule10EventExample, eventWords, refineGuard } = CURRENT_IMAGE_SET
+  if (rule10EventExample && eventWords && !eventWords.some((w) => draftPrompt.includes(w))) {
+    if (systemPrompt.split(rule10EventExample).length === 2) {
+      systemPromptToSend = systemPrompt.replace(rule10EventExample, () => '')
+    } else {
+      console.error('refine-prompt: rule10 event example block not found exactly once; system prompt left unchanged')
+    }
+  }
+
+  // OpenAI 呼び出し（成功なら本文、失敗なら status を返す）
+  const callRefine = async (): Promise<{ ok: true; text: string } | { ok: false; status: number; empty?: boolean }> => {
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -352,7 +377,7 @@ app.post('/api/refine-prompt', async (c) => {
         temperature: 0.3,
         max_tokens: 800,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: systemPromptToSend },
           { role: 'user',   content: draftPrompt  },
         ],
       }),
@@ -361,16 +386,91 @@ app.post('/api/refine-prompt', async (c) => {
     if (!openaiRes.ok) {
       const errText = await openaiRes.text()
       console.error('OpenAI API error:', openaiRes.status, errText)
-      return c.json({ success: false, error: `OpenAI API error: ${openaiRes.status}` }, 502)
+      return { ok: false, status: openaiRes.status }
     }
 
     const openaiData = await openaiRes.json() as {
       choices: { message: { content: string } }[]
     }
-    const refinedPrompt = openaiData.choices?.[0]?.message?.content?.trim()
+    const text = openaiData.choices?.[0]?.message?.content?.trim()
+    if (!text) return { ok: false, status: 502, empty: true }
+    return { ok: true, text }
+  }
 
-    if (!refinedPrompt) {
-      return c.json({ success: false, error: 'Empty response from OpenAI' }, 502)
+  try {
+    const first = await callRefine()
+    if (!first.ok) {
+      if (first.empty) return c.json({ success: false, error: 'Empty response from OpenAI' }, 502)
+      return c.json({ success: false, error: `OpenAI API error: ${first.status}` }, 502)
+    }
+    let refinedPrompt = first.text
+
+    // 【セット6のみ】中間部分（LLMの出力）の暴走ガード。refineGuard のないセットは通らない（出力はそのまま）
+    if (refineGuard) {
+      const wordCount = (t: string) => t.split(/\s+/).filter(Boolean).length
+      const phraseKey = (t: string) => t.trim().toLowerCase().replace(/[\s.;]+$/, '')
+      const splitPhrases = (t: string) => t.split(',').map((x) => x.trim()).filter(Boolean)
+      // 異常の理由（なければ null）。語数は空白区切り。同じ句はカンマ区切りで trim・小文字化して数える
+      const anomaly = (t: string): string | null => {
+        const words = wordCount(t)
+        const counts = new Map<string, number>()
+        let maxRepeat = 0
+        for (const ph of splitPhrases(t)) {
+          const k = phraseKey(ph)
+          if (!k) continue
+          const n = (counts.get(k) ?? 0) + 1
+          counts.set(k, n)
+          if (n > maxRepeat) maxRepeat = n
+        }
+        const reasons: string[] = []
+        if (words > refineGuard.maxWords) reasons.push(`words ${words} > ${refineGuard.maxWords}`)
+        if (maxRepeat >= refineGuard.repeatLimit) reasons.push(`same phrase x${maxRepeat} (limit ${refineGuard.repeatLimit})`)
+        return reasons.length ? reasons.join(', ') : null
+      }
+      // 重なった句を1つにまとめ（最初の出現を残す）、カンマの位置で trimWords 語以内に切り詰める
+      const collapseAndTrim = (t: string): string => {
+        const seen = new Set<string>()
+        const kept: string[] = []
+        for (const ph of splitPhrases(t)) {
+          const k = phraseKey(ph)
+          if (!k || seen.has(k)) continue
+          seen.add(k)
+          kept.push(ph.replace(/[\s.;]+$/, ''))
+        }
+        const out: string[] = []
+        let total = 0
+        for (const ph of kept) {
+          const n = wordCount(ph)
+          if (total + n > refineGuard.trimWords) {
+            // 先頭の句だけで上限を超える場合に限り、語単位で切る
+            if (out.length === 0) out.push(ph.split(/\s+/).filter(Boolean).slice(0, refineGuard.trimWords).join(' '))
+            break
+          }
+          out.push(ph)
+          total += n
+        }
+        return out.join(', ')
+      }
+
+      const reason1 = anomaly(refinedPrompt)
+      if (reason1) {
+        const before1 = wordCount(refinedPrompt)
+        console.log(`[refine-guard] set ${setId}: retry once. reason: ${reason1}. words before: ${before1}`)
+        let second: Awaited<ReturnType<typeof callRefine>> | null = null
+        try { second = await callRefine() } catch (e) { console.error('[refine-guard] retry failed:', e) }
+        let candidate = refinedPrompt
+        if (second && second.ok) candidate = second.text
+        else console.log(`[refine-guard] set ${setId}: retry did not return text; using the first output`)
+        const reason2 = anomaly(candidate)
+        if (reason2) {
+          const before2 = wordCount(candidate)
+          refinedPrompt = collapseAndTrim(candidate)
+          console.log(`[refine-guard] set ${setId}: collapse and trim. reason: ${reason2}. words before: ${before2}, after: ${wordCount(refinedPrompt)}`)
+        } else {
+          refinedPrompt = candidate
+          console.log(`[refine-guard] set ${setId}: retry OK. words: ${wordCount(candidate)}`)
+        }
+      }
     }
 
     // セット別の固定文（未定義のセット1〜5は連結せず、従来どおりLLMの出力をそのまま返す）
