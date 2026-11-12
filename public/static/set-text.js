@@ -92,10 +92,15 @@
   // ・語の一覧は、index.tsx の rule10 と、app.js の合成スキップ語（NIGHTTIME_KEYWORDS / SKIP_KEYWORDS_EXTRA / セット6の時間帯行限定語）に揃える。
   // ・差し替え文には合成スキップの判定語（夕方・夜・星など）を入れない（下書き全体が判定対象のため）。
   // ・Q5 が「特になし」などのときは、app.js が「季節・時間帯:」行も「時間帯の反映:」行も付けないので、何も差し替えない。
-  // ・6問すべての回答に行事語がないときは、差し替え文の後ろに「行事の飾りや頭上の飾りは加えない」の1文を足す（LLM が冬などから行事の飾りを連想して足すのを防ぐ）。
+  // ・6問すべての回答に行事語がないときは、差し替え文の後ろに1文を足す（LLM が冬などから行事の飾りを連想して足すのを防ぐ）。
+  //   吊り飾り・背の高い物の語もないときは「行事の飾りや頭上の飾りは加えない」、それらの語があるときは「行事の飾りは加えない」。
   var TOD_NONE_NOTE = '時間帯の反映: 時間帯の指定はない。行事や季節の飾りだけを加え、空の色と明るさ、全体の光は元画像と同じ昼間のままにする。空には天体を描かない。';
-  // 6問すべての回答に行事語（辞書の extraSkip.event）がないときだけ、上の文の後ろに足す文。合成スキップの判定語・時間帯語は入れない
+  // 上の文の後ろに足す文（6問すべての回答を見て選ぶ。合成スキップの判定語・時間帯語は入れない）
+  //   行事語・吊り飾りの語・背の高い物の語のどれもない → 行事の飾りも頭上の飾りも加えない
+  //   吊り飾りの語か背の高い物の語はあるが、行事語はない → 行事の飾りだけ加えない（回答の吊り飾り等と矛盾させない）
+  //   行事語がある → 何も足さない
   var TOD_NONE_NO_EVENT_ADD = '季節の行事の飾りや、屋根の下・頭上の飾りは加えない。';
+  var TOD_NONE_NO_EVENT_ONLY_ADD = '季節の行事の飾りは加えない。';
   var TOD_WORDS = [
     // 朝
     '朝', '早朝', '朝方', '朝焼け', '明け方', '夜明け', '日の出', 'サンライズ', 'あけがた', 'よあけ', '未明',
@@ -116,19 +121,25 @@
     var v = plain(s);
     return todWordsAll().filter(function (w) { return v.indexOf(w) >= 0; });
   };
-  // 6問すべての回答のどこかに行事語があるか（合成スキップの行事の判定語 extraSkip.event と同じ一覧）
-  var hasEventWord = function (a) {
-    var ev = (T.extraSkip && T.extraSkip.event) || [];
+  // 6問すべての回答のどこかに、合成スキップと同じ一覧の語（extraSkip の指定グループ）があるか。strip 語（のぼり旗など）は先に除く
+  var hasWordOf = function (a, groups) {
+    var ex = T.extraSkip || {};
     var v = ANSWER_KEYS.map(function (k) { return plain(a[k]); }).join('\n');
-    return ev.some(function (w) { return v.indexOf(w) >= 0; });
+    (ex.strip || []).forEach(function (w) { v = v.split(w).join(''); });
+    return groups.some(function (g) {
+      return (ex[g] || []).some(function (w) { return v.indexOf(w) >= 0; });
+    });
   };
+  var hasEventWord = function (a) { return hasWordOf(a, ['event']); };
+  var hasHangTallWord = function (a) { return hasWordOf(a, ['hang', 'tall']); };
   var replaceTimeNote = function (t, a) {
     var note = W.timeOfDayNote;
     if (!note || todHits(a.timeOfDay).length > 0) return t;
     var lines = t.split('\n');
     var i = lines.indexOf(note);
     if (i < 0) return t;
-    lines[i] = hasEventWord(a) ? TOD_NONE_NOTE : TOD_NONE_NOTE + TOD_NONE_NO_EVENT_ADD;
+    var add = hasEventWord(a) ? '' : (hasHangTallWord(a) ? TOD_NONE_NO_EVENT_ONLY_ADD : TOD_NONE_NO_EVENT_ADD);
+    lines[i] = TOD_NONE_NOTE + add;
     return lines.join('\n');
   };
 
@@ -189,5 +200,5 @@
   };
 
   // 動作確認用（画面には影響しない）
-  window.__SET_TEXT_API__ = { findExtraSkipWords: findExtraSkipWords, isNoneAnswer: isNoneAnswer, q1ForQ2: q1ForQ2, todHits: todHits, hasEventWord: hasEventWord };
+  window.__SET_TEXT_API__ = { findExtraSkipWords: findExtraSkipWords, isNoneAnswer: isNoneAnswer, q1ForQ2: q1ForQ2, todHits: todHits, hasEventWord: hasEventWord, hasHangTallWord: hasHangTallWord };
 })();
